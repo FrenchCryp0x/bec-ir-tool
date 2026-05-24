@@ -167,6 +167,54 @@ def get_stats(case: str = Query(default="default")):
         db.close()
 
 
+# ── Users list ───────────────────────────────────────────────────────────────
+
+@app.get("/api/users")
+def get_users(case: str = Query(default="default")):
+    db = _open_case(case)
+    try:
+        df = db.query("""
+            SELECT
+                user,
+                COUNT(*)                          AS event_count,
+                STRING_AGG(DISTINCT log_type, ', ') AS log_types,
+                MIN(timestamp)                    AS first_seen,
+                MAX(timestamp)                    AS last_seen
+            FROM events
+            WHERE user IS NOT NULL AND user != '' AND user != 'nan'
+            GROUP BY user
+            ORDER BY event_count DESC
+            LIMIT 200
+        """)
+        return {"users": _ts_safe(df.to_dict("records"))}
+    finally:
+        db.close()
+
+
+# ── IOCs ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/iocs")
+def get_iocs(case: str = Query(default="default")):
+    db = _open_case(case)
+    try:
+        ips = db.query("""
+            SELECT
+                source_ip                              AS value,
+                COUNT(*)                               AS count,
+                COUNT(DISTINCT user)                   AS unique_users,
+                STRING_AGG(DISTINCT log_type, ', ')    AS log_types
+            FROM events
+            WHERE source_ip IS NOT NULL
+              AND source_ip NOT IN ('', 'nan', 'None', 'NaN')
+            GROUP BY source_ip
+            ORDER BY count DESC
+            LIMIT 30
+        """).to_dict("records")
+        return {"ips": ips}
+    finally:
+        db.close()
+
+
 # ── Serve UI ─────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
