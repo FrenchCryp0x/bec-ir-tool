@@ -166,6 +166,43 @@ td.user { color: #fde68a; }
 .legend-item { display: flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--muted); }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 
+/* ── Attack Summary ── */
+.summary-banner { border-radius: var(--radius); padding: 18px 22px; margin-bottom: 18px; display: flex; align-items: center; gap: 16px; }
+.summary-banner.sev-critical { background: #200a0a; border: 1px solid #7f1d1d; }
+.summary-banner.sev-high     { background: #1c1000; border: 1px solid #78350f; }
+.summary-banner.sev-medium   { background: #061822; border: 1px solid #164e63; }
+.summary-banner.sev-low,
+.summary-banner.sev-none     { background: #0f1623; border: 1px solid var(--border); }
+.summary-banner .banner-icon { font-size: 2rem; flex-shrink: 0; }
+.summary-banner .banner-title { font-size: 1.1rem; font-weight: 700; }
+.summary-banner .banner-sub   { font-size: .82rem; color: var(--muted); margin-top: 3px; }
+.summary-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.summary-meta-box { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.summary-meta-box .meta-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.summary-meta-box .meta-val   { font-size: .85rem; line-height: 1.5; }
+.phase-card { background: var(--panel); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; border: 1px solid var(--border); }
+.phase-header { padding: 14px 18px; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.phase-header:hover { background: #141e2e; }
+.phase-icon { font-size: 1.4rem; flex-shrink: 0; }
+.phase-title { font-size: .95rem; font-weight: 700; flex: 1; }
+.phase-count { background: #1d3461; color: var(--accent); font-size: .75rem; font-weight: 700; padding: 2px 9px; border-radius: 99px; }
+.phase-chevron { color: var(--muted); font-size: .8rem; flex-shrink: 0; transition: transform .2s; }
+.phase-card.expanded .phase-chevron { transform: rotate(90deg); }
+.phase-body { display: none; padding: 0 18px 18px; border-top: 1px solid var(--border); }
+.phase-card.expanded .phase-body { display: block; }
+.phase-desc { font-size: .82rem; color: var(--muted); margin: 12px 0 14px; line-height: 1.5; }
+.phase-section-label { font-size: .72rem; color: var(--accent2); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; margin-top: 14px; }
+.phase-finding { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; padding: 8px 10px; background: #080e1a; border-radius: 6px; border-left: 3px solid var(--border); font-size: .82rem; }
+.phase-finding.sev-critical { border-left-color: var(--crit); }
+.phase-finding.sev-high     { border-left-color: var(--high); }
+.phase-finding.sev-medium   { border-left-color: var(--med);  }
+.phase-finding.sev-low      { border-left-color: var(--low);  }
+.phase-finding-ts { color: var(--accent2); font-family: monospace; font-size: .75rem; flex-shrink: 0; min-width: 110px; }
+.phase-finding-desc { flex: 1; line-height: 1.4; }
+.phase-action { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; font-size: .82rem; line-height: 1.4; }
+.phase-action-num { background: #1d3461; color: var(--accent); border-radius: 50%; width: 18px; height: 18px; font-size: .65rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+.phase-pill { display: inline-block; background: var(--bg); border: 1px solid var(--border); color: var(--muted); font-size: .7rem; padding: 1px 7px; border-radius: 99px; margin: 2px 2px 2px 0; }
+
 /* ── Misc ── */
 .empty  { color: var(--muted); text-align: center; padding: 32px; }
 .info   { background: #0c1a2e; border: 1px solid #1d3461; border-radius: 8px; padding: 10px 14px; color: var(--accent); font-size: .82rem; margin-bottom: 12px; }
@@ -200,6 +237,7 @@ td.user { color: #fde68a; }
   <button onclick="showTab('search',this)">Search</button>
   <button onclick="showTab('timeline',this)">Timeline</button>
   <button onclick="showTab('detections',this)">Detections</button>
+  <button onclick="showTab('summary',this)">&#x26A0; Attack Summary</button>
   <button onclick="showTab('iocs',this)">IOCs</button>
   <button onclick="showTab('ai',this)">AI Analysis</button>
 </nav>
@@ -262,8 +300,9 @@ td.user { color: #fde68a; }
       3. Click stat cards above to drill into users, events, and log types.<br>
       4. Use <strong>Search</strong> with quick-chips or custom filters.<br>
       5. Check <strong>Detections</strong> for triggered BEC rules — expand each card for IR playbook steps.<br>
-      6. Review <strong>IOCs</strong> for suspicious source IPs.<br>
-      7. Run <strong>AI Analysis</strong> for Claude's attack-chain assessment.
+      6. Open <strong>Attack Summary</strong> for an automatic phased IR view — Initial Access → Persistence → Exfiltration → Cover-up.<br>
+      7. Review <strong>IOCs</strong> for suspicious source IPs.<br>
+      8. Run <strong>AI Analysis</strong> for Claude's attack-chain assessment.
     </p>
   </div>
 </div>
@@ -373,6 +412,19 @@ td.user { color: #fde68a; }
     </div>
   </div>
   <div id="detectionsContainer"></div>
+</div>
+
+<!-- ── Attack Summary ─────────────────────────────────── -->
+<div id="tab-summary" class="tab-content">
+  <div id="summaryBanner" class="summary-banner sev-none">
+    <div class="banner-icon">&#x26A0;</div>
+    <div>
+      <div class="banner-title">Attack Summary</div>
+      <div class="banner-sub">Run Detections first to populate this view.</div>
+    </div>
+  </div>
+  <div id="summaryMeta" class="summary-meta" style="display:none"></div>
+  <div id="summaryContent"><div class="empty">Go to <strong>Detections</strong> tab and click <strong>Run Detections</strong> — the attack summary will appear here automatically.</div></div>
 </div>
 
 <!-- ── IOCs ───────────────────────────────────────────── -->
@@ -627,7 +679,7 @@ function downloadCSV(filename, rows, headers) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-const NAV_TABS = ['dashboard','upload','search','timeline','detections','iocs','ai'];
+const NAV_TABS = ['dashboard','upload','search','timeline','detections','summary','iocs','ai'];
 
 function showTab(name, btnOrEl) {
   document.querySelectorAll('.tab-content').forEach(d => d.classList.remove('active'));
@@ -1095,6 +1147,223 @@ async function loadTimeline() {
   }
 }
 
+// ── Attack Summary ────────────────────────────────────────────────────────────
+
+const PHASES = [
+  {
+    id: 'initial_access',
+    label: 'Initial Access',
+    icon: '🚪',
+    borderColor: '#f97316',
+    rules: ['impossible_travel', 'offhours_signin'],
+    description: 'Attacker gains first foothold — credential compromise indicated by impossible geographic travel or off-hours logins outside the victim\'s normal pattern.',
+    actions: [
+      'Identify the compromised account(s) and reset credentials immediately.',
+      'Revoke all active sessions for every affected user.',
+      'Block attacker source IPs at the perimeter firewall / conditional access policy.',
+      'Enable or enforce MFA for all accounts if not already in place.',
+      'Capture attacker IP, user-agent, and ASN for threat intel.',
+    ],
+  },
+  {
+    id: 'persistence',
+    label: 'Persistence',
+    icon: '⚙️',
+    borderColor: '#f59e0b',
+    rules: ['inbox_rule_created', 'mailbox_delegation', 'oauth_app_grant'],
+    description: 'Attacker maintains ongoing access — inbox forwarding rules, mailbox delegation grants, or OAuth application consents that survive a password reset.',
+    actions: [
+      'Audit and delete all unauthorized inbox rules across affected mailboxes.',
+      'Remove unauthorized mailbox delegation / Send-As permissions.',
+      'Revoke unauthorized OAuth app consents in Azure AD Enterprise Applications.',
+      'Check for hidden forwarding rules pointing to external addresses.',
+      'Verify no new mail contacts or transport rules were created.',
+    ],
+  },
+  {
+    id: 'privilege_escalation',
+    label: 'Privilege Escalation',
+    icon: '⬆️',
+    borderColor: '#ef4444',
+    rules: ['admin_role_added', 'mfa_modified'],
+    description: 'Attacker escalates privileges — admin role assignments or weakening/removal of MFA to maintain persistent admin access.',
+    actions: [
+      'Remove all unauthorized admin role assignments in Azure AD / M365 Admin.',
+      'Audit MFA methods for every privileged account and force re-enrolment.',
+      'Review all admin-level actions taken during the incident window.',
+      'Enable Privileged Identity Management (PIM) to require approval for admin roles.',
+      'Alert the security team and escalate to IR if Global Admin was compromised.',
+    ],
+  },
+  {
+    id: 'exfiltration',
+    label: 'Exfiltration',
+    icon: '📤',
+    borderColor: '#8b5cf6',
+    rules: ['mass_email_send', 'large_external_send'],
+    description: 'Attacker exfiltrates data — mass email campaigns or oversized outbound emails to external recipients.',
+    actions: [
+      'Identify all external recipients and preserve the email message headers.',
+      'Notify affected recipients if phishing or fraudulent content was sent.',
+      'Review email body/attachments for PII, financial data, or credentials.',
+      'Assess regulatory data-breach notification obligations.',
+      'Block the sending account and quarantine remaining outbound mail.',
+    ],
+  },
+  {
+    id: 'cover_up',
+    label: 'Evidence Cover-up',
+    icon: '🗑️',
+    borderColor: '#64748b',
+    rules: ['evidence_deletion'],
+    description: 'Attacker destroys forensic evidence — bulk deletion of mailbox items, including hard-delete to bypass recycle bin recovery.',
+    actions: [
+      'Immediately enable Litigation Hold on affected mailboxes to block further deletion.',
+      'Attempt item recovery from Recoverable Items / Exchange retention.',
+      'Document exact deletion timestamps and operation types for legal proceedings.',
+      'Preserve a forensic copy of current mailbox state before any remediation.',
+      'Check if deleted items still exist in the Recoverable Items purges folder.',
+    ],
+  },
+  {
+    id: 'account_manipulation',
+    label: 'Account Manipulation',
+    icon: '👤',
+    borderColor: '#ec4899',
+    rules: ['password_reset_by_other'],
+    description: 'Attacker manipulates target accounts — unauthorized password resets to lock out victims or pivot to additional accounts.',
+    actions: [
+      'Verify with the account owner whether any password reset was requested.',
+      'Re-reset passwords for all affected accounts and notify users.',
+      'Revoke all sessions for affected accounts after password reset.',
+      'Review actions taken by the resetting account before and after the event.',
+      'Investigate potential helpdesk social engineering (vishing, spoofed tickets).',
+    ],
+  },
+];
+
+const OVERALL_SEV_ORDER = ['critical', 'high', 'medium', 'low'];
+
+function buildAttackSummary(findings) {
+  const banner  = el('summaryBanner');
+  const metaEl  = el('summaryMeta');
+  const content = el('summaryContent');
+
+  if (!findings || !findings.length) {
+    banner.className = 'summary-banner sev-none';
+    banner.innerHTML = '<div class="banner-icon">&#x2714;</div><div><div class="banner-title">No Detections</div><div class="banner-sub">No BEC indicators found in the ingested logs.</div></div>';
+    metaEl.style.display = 'none';
+    content.innerHTML = '<div class="empty">No findings to summarise.</div>';
+    return;
+  }
+
+  // Determine overall severity
+  const sevs = findings.map(f => f.severity);
+  const overallSev = OVERALL_SEV_ORDER.find(s => sevs.includes(s)) || 'low';
+  const sevLabels = { critical: '&#x1F534; CRITICAL', high: '&#x1F7E0; HIGH', medium: '&#x1F7E1; MEDIUM', low: '&#x26AA; LOW' };
+  const bannerMessages = {
+    critical: 'Active compromise confirmed — immediate containment required.',
+    high:     'High-confidence BEC indicators detected — escalate and contain.',
+    medium:   'Suspicious activity detected — investigate and verify.',
+    low:      'Low-severity anomalies — monitor and validate with user.',
+  };
+
+  banner.className = `summary-banner sev-${overallSev}`;
+  banner.innerHTML = `
+    <div class="banner-icon">${overallSev === 'critical' ? '&#x1F6A8;' : overallSev === 'high' ? '&#x26A0;' : '&#x1F50D;'}</div>
+    <div style="flex:1">
+      <div class="banner-title">${sevLabels[overallSev] || 'UNKNOWN'} &mdash; ${findings.length} Finding${findings.length !== 1 ? 's' : ''} Across ${PHASES.filter(p => p.rules.some(r => findings.some(f => f.rule === r))).length} Attack Phase${PHASES.filter(p => p.rules.some(r => findings.some(f => f.rule === r))).length !== 1 ? 's' : ''}</div>
+      <div class="banner-sub">${bannerMessages[overallSev]}</div>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="goTab('detections');loadDetections()">&#x1F50D; View All Detections</button>`;
+
+  // Meta boxes: affected users, attacker IPs, timeframe
+  const affectedUsers = [...new Set(findings.map(f => f.user).filter(Boolean))];
+  const timestamps = findings.map(f => f.timestamp).filter(Boolean).sort();
+  const earliest = timestamps[0] ? timestamps[0].slice(0, 10) : '—';
+  const latest   = timestamps[timestamps.length - 1] ? timestamps[timestamps.length - 1].slice(0, 10) : '—';
+
+  metaEl.style.display = 'grid';
+  metaEl.innerHTML = `
+    <div class="summary-meta-box">
+      <div class="meta-label">&#x1F464; Affected Accounts (${affectedUsers.length})</div>
+      <div class="meta-val">${affectedUsers.slice(0, 5).map(u => `<span class="phase-pill" style="cursor:pointer" onclick="pivotToSearch(${jq(u)})" title="Search events">${escHtml(u)}</span>`).join('') + (affectedUsers.length > 5 ? `<span class="phase-pill">+${affectedUsers.length - 5} more</span>` : '')}</div>
+    </div>
+    <div class="summary-meta-box">
+      <div class="meta-label">&#x1F4C5; Incident Timeframe</div>
+      <div class="meta-val" style="font-family:monospace;color:var(--accent2)">${escHtml(earliest)} &rarr; ${escHtml(latest)}</div>
+    </div>
+    <div class="summary-meta-box">
+      <div class="meta-label">&#x26A0; Severity Breakdown</div>
+      <div class="meta-val">
+        ${OVERALL_SEV_ORDER.map(s => {
+          const n = findings.filter(f => f.severity === s).length;
+          return n ? `${sevBadge(s)} <span style="color:var(--muted);font-size:.8rem">&times;${n}</span> &nbsp;` : '';
+        }).join('')}
+      </div>
+    </div>`;
+
+  // Build phase cards — only show phases that have findings
+  const phaseCards = PHASES.map((phase, pi) => {
+    const phaseFnds = findings.filter(f => phase.rules.includes(f.rule));
+    if (!phaseFnds.length) return '';
+
+    const phaseSev = OVERALL_SEV_ORDER.find(s => phaseFnds.some(f => f.severity === s)) || 'low';
+    const sorted   = [...phaseFnds].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+
+    const findingsHtml = sorted.map(f => `
+      <div class="phase-finding sev-${escHtml(f.severity)}">
+        <div class="phase-finding-ts">${escHtml((f.timestamp || '').slice(0, 16))}</div>
+        <div class="phase-finding-desc">
+          ${sevBadge(f.severity)} ${escHtml(f.description)}
+          ${f.detail ? `<div style="color:var(--muted);font-size:.75rem;margin-top:3px">${escHtml(truncate(f.detail, 180))}</div>` : ''}
+          <div style="margin-top:4px">
+            ${f.user ? `<button class="btn-pivot" style="font-size:.68rem;padding:2px 6px" onclick="pivotToTimeline(${jq(f.user)})">&#x1F4C5; Timeline</button> ` : ''}
+            ${f.mitre ? `<span style="color:var(--muted);font-size:.7rem">${escHtml(f.mitre)}</span>` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+
+    const actionsHtml = phase.actions.map((a, n) => `
+      <div class="phase-action">
+        <div class="phase-action-num">${n + 1}</div>
+        <div>${escHtml(a)}</div>
+      </div>`).join('');
+
+    return `
+      <div class="phase-card" id="phase-card-${pi}" style="border-top:3px solid ${phase.borderColor}">
+        <div class="phase-header" onclick="togglePhase(${pi})">
+          <div class="phase-icon">${phase.icon}</div>
+          <div class="phase-title">${escHtml(phase.label)}</div>
+          ${sevBadge(phaseSev)}
+          <span class="phase-count">${phaseFnds.length} finding${phaseFnds.length !== 1 ? 's' : ''}</span>
+          <div class="phase-chevron">&#9658;</div>
+        </div>
+        <div class="phase-body">
+          <div class="phase-desc">${escHtml(phase.description)}</div>
+          <div class="phase-section-label">&#x1F50D; Findings</div>
+          ${findingsHtml}
+          <div class="phase-section-label" style="margin-top:18px">&#x1F6E1; Immediate Actions</div>
+          ${actionsHtml}
+        </div>
+      </div>`;
+  }).join('');
+
+  content.innerHTML = phaseCards || '<div class="empty">No phase mapping available.</div>';
+
+  // Auto-expand the highest-severity phase
+  const firstActivePhaseIdx = PHASES.findIndex(p => p.rules.some(r => findings.some(f => f.rule === r)));
+  if (firstActivePhaseIdx >= 0) {
+    const card = el(`phase-card-${firstActivePhaseIdx}`);
+    if (card) card.classList.add('expanded');
+  }
+}
+
+function togglePhase(i) {
+  const card = el(`phase-card-${i}`);
+  if (card) card.classList.toggle('expanded');
+}
+
 // ── Detections ────────────────────────────────────────────────────────────────
 
 async function loadDetections() {
@@ -1107,11 +1376,14 @@ async function loadDetections() {
 
     if (!data.detections.length) {
       container.innerHTML = '<div class="info">&#x2713; No detections triggered.</div>';
+      buildAttackSummary([]);
       return;
     }
 
     container.innerHTML = '<div class="card"><h2>' + data.count + ' Finding(s) — Click a card to expand IR playbook</h2>' +
       data.detections.map((d, i) => buildDetCard(d, i)).join('') + '</div>';
+
+    buildAttackSummary(data.detections);
   } catch (e) {
     container.innerHTML = `<div class="err">${escHtml(e.message)}</div>`;
   }
