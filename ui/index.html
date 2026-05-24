@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BEC IR Tool</title>
+<style>
+:root {
+  --bg:       #0b1120;
+  --panel:    #111827;
+  --border:   #1f2d42;
+  --accent:   #3b82f6;
+  --accent2:  #06b6d4;
+  --fg:       #e2e8f0;
+  --muted:    #64748b;
+  --crit:     #ef4444;
+  --high:     #f59e0b;
+  --med:      #06b6d4;
+  --low:      #94a3b8;
+  --ok:       #22c55e;
+  --radius:   10px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--fg); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+
+/* ── Layout ── */
+header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 1.1rem; font-weight: 700; color: var(--accent); letter-spacing: .03em; }
+header .badge { background: #1d3461; color: var(--accent); font-size: .7rem; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--accent); }
+
+.case-bar { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.case-bar label { color: var(--muted); font-size: .8rem; }
+.case-bar select, .case-bar input { background: var(--bg); border: 1px solid var(--border); color: var(--fg); padding: 4px 8px; border-radius: 6px; font-size: .85rem; }
+.case-bar button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font-size: .8rem; }
+.case-bar button:hover { background: var(--accent); color: #fff; }
+
+nav { background: var(--panel); border-bottom: 1px solid var(--border); display: flex; padding: 0 24px; }
+nav button { background: none; border: none; color: var(--muted); padding: 10px 18px; cursor: pointer; font-size: .9rem; border-bottom: 2px solid transparent; transition: .15s; }
+nav button.active { color: var(--fg); border-bottom-color: var(--accent); }
+nav button:hover:not(.active) { color: var(--fg); }
+
+main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── Cards / panels ── */
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+.card h2 { font-size: .95rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 14px; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
+.stat-card .num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.stat-card .lbl { color: var(--muted); font-size: .8rem; margin-top: 4px; }
+
+/* ── Forms ── */
+.search-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.search-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--fg); padding: 9px 14px; border-radius: 8px; font-size: .9rem; }
+.search-row input:focus { outline: none; border-color: var(--accent); }
+
+.btn { padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: .85rem; transition: .15s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--fg); }
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Table ── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+th { background: #0f172a; color: var(--muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 7px 12px; border-bottom: 1px solid #161f30; vertical-align: top; }
+tr:hover td { background: #141e2e; }
+td.ts { color: var(--accent2); white-space: nowrap; font-family: monospace; }
+td.log-type { color: var(--muted); font-size: .75rem; }
+td.op { color: #a5f3fc; }
+td.user { color: #fde68a; }
+
+/* ── Severity badges ── */
+.sev { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: .72rem; font-weight: 700; }
+.sev-critical { background: #450a0a; color: var(--crit); border: 1px solid #7f1d1d; }
+.sev-high     { background: #451a03; color: var(--high); border: 1px solid #78350f; }
+.sev-medium   { background: #0c3044; color: var(--med);  border: 1px solid #164e63; }
+.sev-low      { background: #1e293b; color: var(--low);  border: 1px solid #334155; }
+
+/* ── Detection cards ── */
+.det-card { border-left: 3px solid var(--border); padding: 10px 14px; border-radius: 0 8px 8px 0; margin-bottom: 8px; background: #0f172a; }
+.det-card.sev-critical { border-left-color: var(--crit); }
+.det-card.sev-high     { border-left-color: var(--high); }
+.det-card.sev-medium   { border-left-color: var(--med);  }
+.det-card.sev-low      { border-left-color: var(--low);  }
+.det-card .det-desc    { font-size: .9rem; margin-bottom: 4px; }
+.det-card .det-meta    { font-size: .75rem; color: var(--muted); }
+
+/* ── Upload zone ── */
+.drop-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px; text-align: center; cursor: pointer; transition: .2s; }
+.drop-zone:hover, .drop-zone.over { border-color: var(--accent); background: #141e2e; }
+.drop-zone p { color: var(--muted); margin-top: 8px; }
+.drop-zone .icon { font-size: 2.5rem; }
+
+/* ── Timeline ── */
+.tl-event { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 6px; }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 5px; }
+.tl-dot.azure_ad_signin { background: #22d3ee; }
+.tl-dot.o365_ual        { background: #a78bfa; }
+.tl-dot.exchange_mtl    { background: #34d399; }
+.tl-dot.generic         { background: var(--muted); }
+.tl-ts   { color: var(--accent2); font-family: monospace; font-size: .78rem; white-space: nowrap; flex-shrink: 0; min-width: 130px; }
+.tl-body { flex: 1; }
+.tl-op   { color: #a5f3fc; font-size: .85rem; }
+.tl-user { color: #fde68a; font-size: .78rem; }
+.tl-ip   { color: var(--muted); font-size: .75rem; }
+
+/* ── AI analysis panel ── */
+.ai-output { white-space: pre-wrap; font-size: .85rem; line-height: 1.6; background: #0f172a; border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; color: var(--fg); max-height: 600px; overflow-y: auto; }
+.ai-output h2 { color: var(--accent2); margin: 14px 0 6px; }
+.ai-output h3 { color: #a78bfa; margin: 10px 0 4px; }
+
+/* ── Misc ── */
+.empty { color: var(--muted); text-align: center; padding: 32px; }
+.info  { background: #0c1a2e; border: 1px solid #1d3461; border-radius: 8px; padding: 10px 14px; color: var(--accent); font-size: .82rem; margin-bottom: 12px; }
+.warn  { background: #1c1208; border: 1px solid #7c3a02; border-radius: 8px; padding: 10px 14px; color: var(--high); font-size: .82rem; margin-bottom: 12px; }
+.err   { background: #1c0808; border: 1px solid #7f1d1d; border-radius: 8px; padding: 10px 14px; color: var(--crit); font-size: .82rem; margin-bottom: 12px; }
+.loader { text-align: center; color: var(--muted); padding: 24px; }
+
+.pagination { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.pagination button { padding: 4px 12px; font-size: .8rem; }
+.pagination span { color: var(--muted); font-size: .8rem; }
+
+.hint { font-size: .75rem; color: var(--muted); margin-top: 6px; }
+
+/* ── Legend ── */
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--muted); }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#x1F6E1; BEC IR Tool</h1>
+  <span class="badge">DFIR MVP</span>
+  <div class="case-bar">
+    <label>Case:</label>
+    <select id="caseSelect" onchange="switchCase()"></select>
+    <input id="newCaseName" placeholder="new-case" style="width:110px">
+    <button onclick="createCase()">+ New</button>
+  </div>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('dashboard',this)">Dashboard</button>
+  <button onclick="showTab('upload',this)">Upload Logs</button>
+  <button onclick="showTab('search',this)">Search</button>
+  <button onclick="showTab('timeline',this)">Timeline</button>
+  <button onclick="showTab('detections',this)">Detections</button>
+  <button onclick="showTab('ai',this)">AI Analysis</button>
+</nav>
+
+<main>
+
+<!-- ── Dashboard ──────────────────────────────────────── -->
+<div id="tab-dashboard" class="tab-content active">
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card"><div class="num" id="s-events">—</div><div class="lbl">Total Events</div></div>
+    <div class="stat-card"><div class="num" id="s-users">—</div><div class="lbl">Unique Users</div></div>
+    <div class="stat-card"><div class="num" id="s-types">—</div><div class="lbl">Log Types</div></div>
+    <div class="stat-card"><div class="num" id="s-dets" style="color:var(--crit)">—</div><div class="lbl">Detections</div></div>
+  </div>
+  <div class="card">
+    <h2>Time Range</h2>
+    <div id="timeRange" style="color:var(--muted)">Load logs to see range</div>
+  </div>
+  <div class="card">
+    <h2>Quick Start</h2>
+    <p style="color:var(--muted);line-height:1.7;">
+      1. Create or select a <strong>case</strong> in the top-right.<br>
+      2. Go to <strong>Upload Logs</strong> to ingest CSV / JSON / XLS files.<br>
+      3. Use <strong>Search</strong> to query events (e.g. <code>user~admin operation~InboxRule</code>).<br>
+      4. Check <strong>Detections</strong> for triggered BEC rules.<br>
+      5. Run <strong>AI Analysis</strong> once your API key is configured.
+    </p>
+  </div>
+</div>
+
+<!-- ── Upload ─────────────────────────────────────────── -->
+<div id="tab-upload" class="tab-content">
+  <div class="card">
+    <h2>Ingest Log File</h2>
+    <div class="info">Supported formats: CSV, JSON, JSONL, XLS, XLSX &nbsp;·&nbsp; Auto-detects O365 UAL, Azure AD Sign-in, Exchange MTL, or generic logs.</div>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">&#x1F4C2;</div>
+      <strong>Click to select a file</strong>
+      <p>or drag and drop here</p>
+    </div>
+    <input type="file" id="fileInput" style="display:none" accept=".csv,.json,.jsonl,.xls,.xlsx,.log,.txt">
+    <div id="uploadResult" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<!-- ── Search ─────────────────────────────────────────── -->
+<div id="tab-search" class="tab-content">
+  <div class="card">
+    <h2>Search Logs</h2>
+    <div class="search-row">
+      <input id="searchInput" placeholder='user~john.doe  /  operation~InboxRule  /  ip=203.0.113.5  /  time>=2024-01-10' onkeydown="if(event.key==='Enter')runSearch()">
+      <button class="btn btn-primary" onclick="runSearch()">Search</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('searchInput').value='*';runSearch()">Clear</button>
+    </div>
+    <div class="hint">
+      Syntax: <code>field=exact</code> &nbsp; <code>field~contains</code> &nbsp; <code>field>=value</code> &nbsp; <code>field=a|b</code> (OR) &nbsp;
+      Fields: <code>user op ip location result type target time</code>
+    </div>
+  </div>
+  <div id="searchResults"></div>
+  <div class="pagination" id="searchPaging" style="display:none">
+    <button class="btn btn-secondary" id="prevBtn" onclick="pageSearch(-1)">&#8592; Prev</button>
+    <span id="pageInfo"></span>
+    <button class="btn btn-secondary" id="nextBtn" onclick="pageSearch(1)">Next &#8594;</button>
+  </div>
+</div>
+
+<!-- ── Timeline ───────────────────────────────────────── -->
+<div id="tab-timeline" class="tab-content">
+  <div class="card">
+    <h2>Event Timeline</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <input id="tlUser" placeholder="Filter by user (optional)" style="background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:7px 12px;border-radius:8px;font-size:.85rem;flex:1">
+      <input id="tlFrom" type="datetime-local" style="background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:7px;border-radius:8px;font-size:.85rem;">
+      <input id="tlTo"   type="datetime-local" style="background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:7px;border-radius:8px;font-size:.85rem;">
+      <button class="btn btn-primary" onclick="loadTimeline()">Build Timeline</button>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> Default</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#22d3ee"></div> Azure AD</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div> O365 UAL</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div> Exchange</div>
+    </div>
+  </div>
+  <div id="timelineContainer"></div>
+</div>
+
+<!-- ── Detections ─────────────────────────────────────── -->
+<div id="tab-detections" class="tab-content">
+  <div class="card">
+    <h2>BEC Detection Rules</h2>
+    <button class="btn btn-primary" onclick="loadDetections()">Run Detections</button>
+    <span style="color:var(--muted);font-size:.8rem;margin-left:12px">Analyses all ingested logs for known BEC patterns</span>
+  </div>
+  <div id="detectionsContainer"></div>
+</div>
+
+<!-- ── AI Analysis ────────────────────────────────────── -->
+<div id="tab-ai" class="tab-content">
+  <div class="card">
+    <h2>AI Analysis — Claude</h2>
+    <div class="info">Claude analyses your ingested logs + triggered detections and returns a BEC attack chain assessment with prioritised IR steps.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <input id="apiKeyInput" type="password" placeholder="Anthropic API key (or set ANTHROPIC_API_KEY env var)" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:9px 14px;border-radius:8px;font-size:.85rem;">
+      <button class="btn btn-primary" id="analyzeBtn" onclick="runAnalysis()">Analyze</button>
+    </div>
+    <p class="hint">Your key is never stored — it is sent only to your local server for this request.</p>
+  </div>
+  <div id="aiResult"></div>
+</div>
+
+</main>
+
+<script>
+const API = '';  // same origin
+let currentCase = 'default';
+let searchOffset = 0;
+let searchTotal  = 0;
+const SEARCH_LIMIT = 100;
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+
+async function apiFetch(path, opts = {}) {
+  const sep = path.includes('?') ? '&' : '?';
+  const url = `${API}${path}${sep}case=${encodeURIComponent(currentCase)}`;
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+function el(id) { return document.getElementById(id); }
+
+function msg(container, type, text) {
+  el(container).innerHTML = `<div class="${type}">${escHtml(text)}</div>`;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function sevBadge(sev) {
+  return `<span class="sev sev-${sev}">${sev.toUpperCase()}</span>`;
+}
+
+function truncate(s, n) {
+  s = String(s || '');
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  el(`tab-${name}`).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'dashboard') loadStats();
+}
+
+// ── Cases ────────────────────────────────────────────────────────────────────
+
+async function loadCases() {
+  try {
+    const { cases } = await fetch(`${API}/api/cases`).then(r => r.json());
+    const sel = el('caseSelect');
+    sel.innerHTML = cases.length
+      ? cases.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('')
+      : '<option value="default">default</option>';
+    currentCase = sel.value;
+  } catch {}
+}
+
+function switchCase() {
+  currentCase = el('caseSelect').value;
+  loadStats();
+}
+
+async function createCase() {
+  const name = el('newCaseName').value.trim();
+  if (!name) return;
+  try {
+    await fetch(`${API}/api/cases/${encodeURIComponent(name)}`, { method: 'POST' });
+    el('newCaseName').value = '';
+    await loadCases();
+    el('caseSelect').value = name;
+    currentCase = name;
+  } catch (e) { alert('Could not create case: ' + e.message); }
+}
+
+// ── Dashboard stats ──────────────────────────────────────────────────────────
+
+async function loadStats() {
+  try {
+    const s = await apiFetch('/api/stats');
+    el('s-events').textContent = s.total_events.toLocaleString();
+    el('s-users').textContent  = s.unique_users.toLocaleString();
+    el('s-types').textContent  = s.log_type_count;
+    el('timeRange').textContent = s.earliest
+      ? `${s.earliest.slice(0,19)}  →  ${s.latest.slice(0,19)} UTC`
+      : 'No logs ingested yet.';
+  } catch {}
+  try {
+    const { count } = await apiFetch('/api/detections');
+    el('s-dets').textContent = count;
+  } catch {}
+}
+
+// ── Upload ───────────────────────────────────────────────────────────────────
+
+function initUpload() {
+  const zone  = el('dropZone');
+  const input = el('fileInput');
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) uploadFile(input.files[0]);
+  });
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('over');
+    if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+  });
+}
+
+async function uploadFile(file) {
+  const res = el('uploadResult');
+  res.innerHTML = '<div class="loader">Ingesting…</div>';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const data = await fetch(
+      `${API}/api/ingest?case=${encodeURIComponent(currentCase)}`,
+      { method: 'POST', body: fd }
+    ).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail); }); return r.json(); });
+
+    res.innerHTML = `
+      <div class="info">
+        <strong>&#x2713; Ingested successfully</strong><br>
+        File: <code>${escHtml(data.filename)}</code><br>
+        Log type detected: <strong>${escHtml(data.log_type_detected)}</strong><br>
+        Records ingested: <strong>${data.records_ingested.toLocaleString()}</strong>
+      </div>`;
+    loadStats();
+  } catch (e) {
+    res.innerHTML = `<div class="err"><strong>Error:</strong> ${escHtml(e.message)}</div>`;
+  }
+}
+
+// ── Search ───────────────────────────────────────────────────────────────────
+
+async function runSearch(offset = 0) {
+  searchOffset = offset;
+  const q = el('searchInput').value.trim() || '*';
+  const container = el('searchResults');
+  container.innerHTML = '<div class="loader">Searching…</div>';
+
+  try {
+    const data = await apiFetch(
+      `/api/search?q=${encodeURIComponent(q)}&limit=${SEARCH_LIMIT}&offset=${offset}`
+    );
+    searchTotal = data.total;
+
+    if (!data.results.length) {
+      container.innerHTML = '<div class="empty">No results found.</div>';
+      el('searchPaging').style.display = 'none';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>Timestamp</th><th>User</th><th>Operation</th>
+              <th>Target</th><th>IP</th><th>Result</th><th>Type</th>
+            </tr></thead>
+            <tbody>
+              ${data.results.map(r => `
+                <tr>
+                  <td class="ts">${escHtml((r.timestamp||'').slice(0,19))}</td>
+                  <td class="user">${escHtml(truncate(r.user,40))}</td>
+                  <td class="op">${escHtml(truncate(r.operation,45))}</td>
+                  <td>${escHtml(truncate(r.target,35))}</td>
+                  <td>${escHtml(r.source_ip||'')}</td>
+                  <td>${escHtml(r.result||'')}</td>
+                  <td class="log-type">${escHtml(r.log_type)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    const pages = el('searchPaging');
+    pages.style.display = 'flex';
+    el('pageInfo').textContent = `${offset + 1}–${Math.min(offset + SEARCH_LIMIT, searchTotal)} of ${searchTotal.toLocaleString()}`;
+    el('prevBtn').disabled = offset === 0;
+    el('nextBtn').disabled = offset + SEARCH_LIMIT >= searchTotal;
+  } catch (e) {
+    container.innerHTML = `<div class="err">${escHtml(e.message)}</div>`;
+    el('searchPaging').style.display = 'none';
+  }
+}
+
+function pageSearch(dir) {
+  runSearch(Math.max(0, searchOffset + dir * SEARCH_LIMIT));
+}
+
+// ── Timeline ─────────────────────────────────────────────────────────────────
+
+async function loadTimeline() {
+  const container = el('timelineContainer');
+  container.innerHTML = '<div class="loader">Building timeline…</div>';
+
+  const user = el('tlUser').value.trim();
+  const from = el('tlFrom').value;
+  const to   = el('tlTo').value;
+
+  let qs = '';
+  if (user) qs += `&user=${encodeURIComponent(user)}`;
+  if (from) qs += `&from_time=${encodeURIComponent(from)}`;
+  if (to)   qs += `&to_time=${encodeURIComponent(to)}`;
+
+  try {
+    const data = await apiFetch(`/api/timeline?limit=500${qs}`);
+
+    if (!data.timeline.length) {
+      container.innerHTML = '<div class="empty">No events to display.</div>';
+      return;
+    }
+
+    let html = '';
+
+    if (data.suspicious_bursts.length) {
+      html += `<div class="warn">&#9888; ${data.suspicious_bursts.length} suspicious activity burst(s) detected in this window.</div>`;
+    }
+
+    html += '<div class="card">';
+    html += data.timeline.map(ev => `
+      <div class="tl-event">
+        <div class="tl-dot ${escHtml(ev.log_type)}"></div>
+        <div class="tl-ts">${escHtml((ev.timestamp||'').slice(0,19))}</div>
+        <div class="tl-body">
+          <div class="tl-op">${escHtml(truncate(ev.operation,60))}</div>
+          <div class="tl-user">${escHtml(truncate(ev.user,50))}</div>
+          ${ev.source_ip ? `<div class="tl-ip">${escHtml(ev.source_ip)} &nbsp; ${escHtml(ev.location||'')}</div>` : ''}
+        </div>
+      </div>`).join('');
+    html += `</div>`;
+
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div class="err">${escHtml(e.message)}</div>`;
+  }
+}
+
+// ── Detections ───────────────────────────────────────────────────────────────
+
+async function loadDetections() {
+  const container = el('detectionsContainer');
+  container.innerHTML = '<div class="loader">Running detection rules…</div>';
+
+  try {
+    const data = await apiFetch('/api/detections');
+
+    if (!data.detections.length) {
+      container.innerHTML = '<div class="info">&#x2713; No detections triggered.</div>';
+      el('s-dets').textContent = '0';
+      return;
+    }
+
+    el('s-dets').textContent = data.count;
+
+    container.innerHTML = '<div class="card"><h2>' + data.count + ' Finding(s)</h2>' +
+      data.detections.map(d => `
+        <div class="det-card sev-${escHtml(d.severity)}">
+          <div class="det-desc">${sevBadge(d.severity)} &nbsp; ${escHtml(d.description)}</div>
+          <div class="det-meta">
+            Rule: <code>${escHtml(d.rule)}</code> &nbsp;·&nbsp;
+            Time: <code>${escHtml((d.timestamp||'').slice(0,19))}</code>
+            ${d.mitre ? ` &nbsp;·&nbsp; ${escHtml(d.mitre)}` : ''}
+          </div>
+          ${d.detail ? `<div class="det-meta" style="margin-top:4px;color:#475569">${escHtml(truncate(d.detail,200))}</div>` : ''}
+        </div>`).join('') + '</div>';
+  } catch (e) {
+    container.innerHTML = `<div class="err">${escHtml(e.message)}</div>`;
+  }
+}
+
+// ── AI Analysis ──────────────────────────────────────────────────────────────
+
+async function runAnalysis() {
+  const btn    = el('analyzeBtn');
+  const result = el('aiResult');
+  const key    = el('apiKeyInput').value.trim();
+
+  btn.disabled = true;
+  btn.textContent = 'Analyzing…';
+  result.innerHTML = '<div class="loader">Claude is reviewing your logs…</div>';
+
+  try {
+    let url = `/api/analyze?case=${encodeURIComponent(currentCase)}`;
+    if (key) url += `&api_key=${encodeURIComponent(key)}`;
+
+    const res = await fetch(url, { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.detail || 'Analysis failed');
+    if (data.error) throw new Error(data.error);
+
+    const formatted = renderMarkdown(data.analysis || '');
+    result.innerHTML = `
+      <div class="card">
+        <div class="ai-output">${formatted}</div>
+        <div style="margin-top:10px;font-size:.75rem;color:var(--muted)">
+          Tokens: ${data.input_tokens || 0} in / ${data.output_tokens || 0} out &nbsp;·&nbsp;
+          Detections fed: ${data.detections_fed || 0}
+        </div>
+      </div>`;
+  } catch (e) {
+    result.innerHTML = `<div class="err"><strong>Error:</strong> ${escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Analyze';
+  }
+}
+
+function renderMarkdown(text) {
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>');
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+(async () => {
+  await loadCases();
+  initUpload();
+  loadStats();
+})();
+</script>
+</body>
+</html>
