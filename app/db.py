@@ -55,7 +55,9 @@ class CaseDB:
         row = self.conn.execute("""
             SELECT
                 COUNT(*)               AS total_events,
-                COUNT(DISTINCT user)   AS unique_users,
+                (SELECT COUNT(DISTINCT user) FROM events
+                 WHERE user IS NOT NULL AND user != '' AND LOWER(user) != 'nan'
+                ) AS unique_users,
                 COUNT(DISTINCT log_type) AS log_type_count,
                 MIN(timestamp)         AS earliest,
                 MAX(timestamp)         AS latest

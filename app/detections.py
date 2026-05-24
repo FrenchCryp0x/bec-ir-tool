@@ -397,6 +397,7 @@ def _large_external_send(db: CaseDB) -> list[dict]:
           AND details LIKE '%KB%'
           AND TRY_CAST(regexp_extract(details, '"Size"[^0-9]*(\d+)', 1) AS INTEGER) > 5000
           AND target IS NOT NULL AND target != ''
+          AND target LIKE '%@%'
           AND target NOT LIKE '%@%@%'
         GROUP BY user
         ORDER BY email_count DESC

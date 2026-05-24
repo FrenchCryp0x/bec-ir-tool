@@ -361,11 +361,20 @@ def _norm_exchange_trace(df: pd.DataFrame) -> pd.DataFrame:
             "Connector":  str(row.get("connector_id") or ""),
         }
 
+        # recipient_address is preferred; fall back to extracting email from
+        # recipient_status which is formatted "email##smtp_code" in some exports
+        recip_addr = str(row.get("recipient_address") or "")
+        if not recip_addr:
+            rs = str(row.get("recipient_status") or "")
+            candidate = rs.split("##")[0].strip()
+            if "@" in candidate:
+                recip_addr = candidate
+
         rows.append({
             "timestamp": _safe_ts(row.get("origin_timestamp_utc")),
             "user":      str(row.get("sender_address") or ""),
             "operation": "EMAIL:SEND",
-            "target":    str(row.get("recipient_address") or ""),
+            "target":    recip_addr,
             "source_ip": str(row.get("original_client_ip") or ""),
             "location":  "",
             "result":    str(row.get("recipient_status") or row.get("delivery_status") or ""),
