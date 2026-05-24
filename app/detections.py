@@ -50,7 +50,7 @@ def _finding(rule, severity, user, timestamp, description, mitre="", detail="") 
         "timestamp":   str(timestamp),
         "description": description,
         "mitre":       mitre,
-        "detail":      str(detail)[:300],
+        "detail":      str(detail)[:2000],
     }
 
 
@@ -299,7 +299,7 @@ def _evidence_deletion(db: CaseDB) -> list[dict]:
             MIN(timestamp) AS first_ts
         FROM events
         WHERE LOWER(operation) IN (
-            'movetodeletedItems', 'movetodeletedItems.',
+            'movetodeleteditems', 'movetodeleteditems.',
             'softdelete', 'softdeleteditem',
             'harddeleteditem', 'harddelete', 'harddeletedmessage',
             'purge'

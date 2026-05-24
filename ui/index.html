@@ -1311,18 +1311,29 @@ function buildAttackSummary(findings) {
     const phaseSev = OVERALL_SEV_ORDER.find(s => phaseFnds.some(f => f.severity === s)) || 'low';
     const sorted   = [...phaseFnds].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
-    const findingsHtml = sorted.map(f => `
+    const findingsHtml = sorted.map((f, fi) => {
+      const detId = `pfd-${pi}-${fi}`;
+      const detailBlock = f.detail ? `
+        <div style="margin-top:4px">
+          <span style="color:var(--accent2);font-size:.72rem;cursor:pointer;text-decoration:underline dotted"
+                onclick="togglePhaseDet('${detId}')">&#x25B6; Raw detail</span>
+          <pre id="${detId}" style="display:none;margin-top:6px;background:#0b1120;border:1px solid var(--border);
+               border-radius:6px;padding:8px;font-size:.72rem;overflow-x:auto;white-space:pre-wrap;
+               max-height:240px;overflow-y:auto;color:var(--fg)">${escHtml(formatDetails(f.detail))}</pre>
+        </div>` : '';
+      return `
       <div class="phase-finding sev-${escHtml(f.severity)}">
         <div class="phase-finding-ts">${escHtml((f.timestamp || '').slice(0, 16))}</div>
         <div class="phase-finding-desc">
           ${sevBadge(f.severity)} ${escHtml(f.description)}
-          ${f.detail ? `<div style="color:var(--muted);font-size:.75rem;margin-top:3px">${escHtml(truncate(f.detail, 180))}</div>` : ''}
-          <div style="margin-top:4px">
-            ${f.user ? `<button class="btn-pivot" style="font-size:.68rem;padding:2px 6px" onclick="pivotToTimeline(${jq(f.user)})">&#x1F4C5; Timeline</button> ` : ''}
+          <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${f.user ? `<button class="btn-pivot" style="font-size:.68rem;padding:2px 6px" onclick="pivotToTimeline(${jq(f.user)})">&#x1F4C5; Timeline</button>` : ''}
             ${f.mitre ? `<span style="color:var(--muted);font-size:.7rem">${escHtml(f.mitre)}</span>` : ''}
           </div>
+          ${detailBlock}
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
     const actionsHtml = phase.actions.map((a, n) => `
       <div class="phase-action">
@@ -1362,6 +1373,15 @@ function buildAttackSummary(findings) {
 function togglePhase(i) {
   const card = el(`phase-card-${i}`);
   if (card) card.classList.toggle('expanded');
+}
+
+function togglePhaseDet(id) {
+  const pre = el(id);
+  if (!pre) return;
+  const open = pre.style.display !== 'none';
+  pre.style.display = open ? 'none' : 'block';
+  const toggle = pre.previousElementSibling;
+  if (toggle) toggle.textContent = (open ? '▶' : '▼') + ' Raw detail';
 }
 
 // ── Detections ────────────────────────────────────────────────────────────────
