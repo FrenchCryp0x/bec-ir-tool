@@ -416,6 +416,10 @@ td.user { color: #fde68a; }
 
 <!-- ── Attack Summary ─────────────────────────────────── -->
 <div id="tab-summary" class="tab-content">
+  <div id="summaryActions" style="display:none;gap:8px;margin-bottom:14px;align-items:center">
+    <button class="btn-export" onclick="exportSummaryCSV()">&#x1F4C4; Export CSV</button>
+    <button class="btn-export" style="border-color:var(--accent);color:var(--accent)" onclick="printSummary()">&#x1F5A8; Print / Save PDF</button>
+  </div>
   <div id="summaryBanner" class="summary-banner sev-none">
     <div class="banner-icon">&#x26A0;</div>
     <div>
@@ -468,6 +472,7 @@ let lastSearchResults = [];
 let lastDetections    = [];
 let lastIOCs          = [];
 let lastUsers         = [];
+let lastSummaryFindings = [];
 
 // ── IR Playbooks ─────────────────────────────────────────────────────────────
 
@@ -1245,17 +1250,22 @@ const PHASES = [
 const OVERALL_SEV_ORDER = ['critical', 'high', 'medium', 'low'];
 
 function buildAttackSummary(findings) {
+  lastSummaryFindings = findings || [];
   const banner  = el('summaryBanner');
   const metaEl  = el('summaryMeta');
   const content = el('summaryContent');
+  const actions = el('summaryActions');
 
   if (!findings || !findings.length) {
     banner.className = 'summary-banner sev-none';
     banner.innerHTML = '<div class="banner-icon">&#x2714;</div><div><div class="banner-title">No Detections</div><div class="banner-sub">No BEC indicators found in the ingested logs.</div></div>';
     metaEl.style.display = 'none';
+    actions.style.display = 'none';
     content.innerHTML = '<div class="empty">No findings to summarise.</div>';
     return;
   }
+
+  actions.style.display = 'flex';
 
   // Determine overall severity
   const sevs = findings.map(f => f.severity);
@@ -1382,6 +1392,130 @@ function togglePhaseDet(id) {
   pre.style.display = open ? 'none' : 'block';
   const toggle = pre.previousElementSibling;
   if (toggle) toggle.textContent = (open ? '▶' : '▼') + ' Raw detail';
+}
+
+function exportSummaryCSV() {
+  if (!lastSummaryFindings.length) { alert('Run detections first.'); return; }
+  const rows = [];
+  PHASES.forEach(phase => {
+    lastSummaryFindings
+      .filter(f => phase.rules.includes(f.rule))
+      .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''))
+      .forEach(f => rows.push({ phase: phase.label, ...f }));
+  });
+  // any findings not mapped to a phase
+  lastSummaryFindings
+    .filter(f => !PHASES.some(p => p.rules.includes(f.rule)))
+    .forEach(f => rows.push({ phase: 'Other', ...f }));
+
+  downloadCSV(`attack-summary-${currentCase}.csv`, rows,
+    ['phase', 'severity', 'rule', 'timestamp', 'user', 'description', 'mitre', 'detail']);
+}
+
+function printSummary() {
+  if (!lastSummaryFindings.length) { alert('Run detections first.'); return; }
+
+  const SEV_ORDER = ['critical', 'high', 'medium', 'low'];
+  const overallSev = SEV_ORDER.find(s => lastSummaryFindings.some(f => f.severity === s)) || 'low';
+  const affectedUsers = [...new Set(lastSummaryFindings.map(f => f.user).filter(Boolean))];
+  const timestamps = lastSummaryFindings.map(f => f.timestamp).filter(Boolean).sort();
+  const earliest = timestamps[0]?.slice(0, 10) || '—';
+  const latest   = timestamps[timestamps.length - 1]?.slice(0, 10) || '—';
+  const generated = new Date().toISOString().slice(0, 19) + ' UTC';
+
+  const sevLabel = { critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW' };
+  const badgeBg  = { critical: '#fee2e2', high: '#fef3c7', medium: '#e0f2fe', low: '#f1f5f9' };
+  const badgeFg  = { critical: '#991b1b', high: '#92400e', medium: '#075985', low: '#475569' };
+  const borderCl = { critical: '#ef4444', high: '#f59e0b', medium: '#06b6d4', low: '#94a3b8' };
+  const bannerBg = { critical: '#fef2f2', high: '#fffbeb', medium: '#ecfeff', low: '#f8fafc' };
+
+  function badge(sev) {
+    return `<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:${badgeBg[sev]||'#eee'};color:${badgeFg[sev]||'#333'}">${sevLabel[sev]||sev.toUpperCase()}</span>`;
+  }
+
+  let body = `
+    <div style="padding:10px 14px;border-radius:6px;margin-bottom:18px;background:${bannerBg[overallSev]};border:1px solid ${borderCl[overallSev]};font-size:13px;font-weight:700;color:${badgeFg[overallSev]}">
+      ${sevLabel[overallSev]} SEVERITY &mdash; ${lastSummaryFindings.length} Finding${lastSummaryFindings.length !== 1 ? 's' : ''}
+      &nbsp; | &nbsp; ${PHASES.filter(p => p.rules.some(r => lastSummaryFindings.some(f => f.rule === r))).length} Attack Phases Identified
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px">
+      <tr>
+        <td style="padding:6px 12px 6px 0;color:#555;vertical-align:top;width:130px"><strong>Case</strong></td>
+        <td style="padding:6px 0;color:#1a1a1a">${escHtml(currentCase)}</td>
+        <td style="padding:6px 12px 6px 20px;color:#555;vertical-align:top;width:130px"><strong>Affected Accounts</strong></td>
+        <td style="padding:6px 0;color:#1a1a1a">${escHtml(affectedUsers.join(', ') || '—')}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 12px 4px 0;color:#555"><strong>Generated</strong></td>
+        <td style="padding:4px 0;font-family:monospace;font-size:10px">${escHtml(generated)}</td>
+        <td style="padding:4px 12px 4px 20px;color:#555"><strong>Incident Window</strong></td>
+        <td style="padding:4px 0;font-family:monospace;font-size:10px">${escHtml(earliest)} &rarr; ${escHtml(latest)}</td>
+      </tr>
+    </table>`;
+
+  PHASES.forEach(phase => {
+    const phaseFnds = lastSummaryFindings.filter(f => phase.rules.includes(f.rule));
+    if (!phaseFnds.length) return;
+    const sorted   = [...phaseFnds].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+    const phaseSev = SEV_ORDER.find(s => phaseFnds.some(f => f.severity === s)) || 'low';
+
+    body += `
+      <div style="border:1px solid #e5e7eb;border-top:3px solid ${phase.borderColor};border-radius:6px;margin-bottom:16px;page-break-inside:avoid">
+        <div style="padding:10px 14px;background:#f9fafb;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px">
+          <span style="font-size:16px">${phase.icon}</span>
+          <span style="font-weight:700;font-size:13px;flex:1">${escHtml(phase.label)}</span>
+          ${badge(phaseSev)}
+          <span style="font-size:11px;color:#666">${phaseFnds.length} finding${phaseFnds.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div style="padding:12px 14px">
+          <p style="font-size:11px;color:#555;margin:0 0 10px">${escHtml(phase.description)}</p>
+          <p style="font-size:11px;font-weight:700;margin:0 0 6px">Findings</p>`;
+
+    sorted.forEach(f => {
+      body += `
+        <div style="padding:6px 10px;margin-bottom:5px;border-left:3px solid ${borderCl[f.severity]||'#ccc'};background:#fafafa;font-size:11px">
+          <span style="font-family:monospace;color:#075985;margin-right:8px">${escHtml((f.timestamp || '').slice(0, 16))}</span>
+          ${badge(f.severity)}
+          <span style="margin-left:6px">${escHtml(f.description)}</span>
+          ${f.mitre ? `<div style="font-size:10px;color:#777;margin-top:2px">${escHtml(f.mitre)}</div>` : ''}
+          ${f.detail ? `<pre style="font-family:monospace;font-size:9px;background:#f0f0f0;border:1px solid #ddd;border-radius:3px;padding:5px;margin:4px 0 0;white-space:pre-wrap;word-break:break-all;max-height:100px;overflow:hidden">${escHtml(f.detail)}</pre>` : ''}
+        </div>`;
+    });
+
+    body += `<p style="font-size:11px;font-weight:700;margin:14px 0 6px">Immediate Actions</p>`;
+    phase.actions.forEach((a, n) => {
+      body += `
+        <div style="display:flex;gap:8px;margin-bottom:4px;font-size:11px">
+          <div style="background:#3b82f6;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">${n + 1}</div>
+          <div>${escHtml(a)}</div>
+        </div>`;
+    });
+
+    body += `</div></div>`;
+  });
+
+  const html = `<!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <title>BEC Attack Summary — ${escHtml(currentCase)}</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #1a1a1a; max-width: 900px; margin: 0 auto; padding: 28px 32px; }
+      h1 { font-size: 18px; font-weight: 700; border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; margin-bottom: 16px; }
+      .footer { margin-top: 28px; font-size: 10px; color: #999; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+      @media print { body { padding: 12px; } }
+    </style>
+  </head><body>
+    <h1>BEC Incident Response — Attack Summary</h1>
+    ${body}
+    <div class="footer">BEC IR Tool &nbsp;·&nbsp; Generated ${escHtml(generated)} &nbsp;·&nbsp; Case: ${escHtml(currentCase)}</div>
+  </body></html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { alert('Pop-up blocked — allow pop-ups for this page and try again.'); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 600);
 }
 
 // ── Detections ────────────────────────────────────────────────────────────────
