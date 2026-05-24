@@ -175,15 +175,39 @@ def _mfa_modified(db: CaseDB) -> list[dict]:
         )
         ORDER BY timestamp
     """)
-    return [
-        _finding(
+
+    # Azure AD fires multiple audit events for one MFA action (e.g. both
+    # "Update user." and "StrongAuthenticationMethodAdded" at the same second).
+    # Deduplicate on user + second-precision timestamp, keeping the most
+    # specific operation (non-'update user' preferred).
+    seen: dict = {}
+    for r in rows:
+        key = (str(r["user"]), str(r["timestamp"])[:19])
+        if key not in seen:
+            seen[key] = r
+        else:
+            # prefer the more specific MFA operation over the generic 'update user.'
+            existing_op = str(seen[key].get("operation", "")).lower()
+            if "update user" in existing_op:
+                seen[key] = r
+
+    findings = []
+    for r in seen.values():
+        op = str(r.get("operation", "")).lower()
+        if "delete" in op or "remove" in op or "disable" in op:
+            action = "removed/disabled"
+        elif "added" in op or "changed" in op or "update" in op:
+            action = "added/changed"
+        else:
+            action = "modified"
+        findings.append(_finding(
             "mfa_modified", "high",
             r["user"], r["timestamp"],
-            f"MFA method added/removed for {r['user']}",
+            f"MFA method {action} for {r['user']}",
             "T1556 - Modify Authentication Process",
-        )
-        for r in rows
-    ]
+            r.get("details", ""),
+        ))
+    return findings
 
 
 def _impossible_travel(db: CaseDB) -> list[dict]:
