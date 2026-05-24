@@ -1,5 +1,6 @@
 import os
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -14,9 +15,29 @@ from .ingest.parser import ingest
 from .search import count_results, search
 from .timeline import build_timeline, detect_bursts
 
-app = FastAPI(title="BEC IR Tool", version="0.1.0", docs_url="/api/docs")
-
 _UI_HTML = Path(__file__).parent.parent / "ui" / "index.html"
+
+
+def _wipe_all_cases() -> int:
+    """Delete every .duckdb file in the cases directory. Returns count deleted."""
+    deleted = 0
+    for p in config.cases_dir.glob("*.duckdb"):
+        try:
+            p.unlink()
+            deleted += 1
+        except Exception:
+            pass
+    return deleted
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _wipe_all_cases()   # clean up any files left by previous unclean shutdown
+    yield
+    _wipe_all_cases()   # wipe everything on clean shutdown
+
+
+app = FastAPI(title="BEC IR Tool", version="0.1.0", docs_url="/api/docs", lifespan=lifespan)
 
 
 def _open_case(case: str) -> CaseDB:
@@ -39,6 +60,13 @@ def _ts_safe(records: list[dict]) -> list[dict]:
 @app.get("/api/cases")
 def list_cases():
     return {"cases": config.list_cases()}
+
+
+@app.post("/api/purge-all")
+def purge_all():
+    """Wipe all case databases — called automatically when the browser tab closes."""
+    deleted = _wipe_all_cases()
+    return {"purged": True, "deleted": deleted}
 
 
 @app.post("/api/cases/{name}", status_code=201)

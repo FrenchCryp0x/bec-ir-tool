@@ -1704,6 +1704,14 @@ function renderMarkdown(text) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+// Wipe all case data when the tab/window is truly closed or navigated away.
+// pagehide + !persisted fires on tab close and hard navigation but NOT on
+// browser back/forward (BFCache restore), so a stale restore won't purge data
+// that's already been wiped. sendBeacon survives page unload reliably.
+window.addEventListener('pagehide', (e) => {
+  if (!e.persisted) navigator.sendBeacon(`${API}/api/purge-all`);
+});
+
 (async () => {
   await loadCases();
   initUpload();
