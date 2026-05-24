@@ -87,6 +87,8 @@ table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 th { background: #0f172a; color: var(--muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 td { padding: 7px 12px; border-bottom: 1px solid #161f30; vertical-align: top; }
 tr:hover td { background: #141e2e; }
+tr.result-row { cursor: pointer; }
+tr.result-row:hover td { background: #1a2540; }
 td.ts   { color: var(--accent2); white-space: nowrap; font-family: monospace; }
 td.log-type { color: var(--muted); font-size: .75rem; }
 td.op   { color: #a5f3fc; }
@@ -223,7 +225,7 @@ td.user { color: #fde68a; }
       <div class="lbl">Log Types</div>
       <div class="hint-click">click for details</div>
     </div>
-    <div class="stat-card" onclick="showTab('detections', document.querySelectorAll('nav button')[4]); loadDetections()">
+    <div class="stat-card" onclick="goTab('detections'); loadDetections()">
       <div class="num" id="s-dets" style="color:var(--crit)">—</div>
       <div class="lbl">Detections</div>
       <div class="hint-click">click to investigate</div>
@@ -595,6 +597,11 @@ function escHtml(str) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Safe JSON value for embedding inside HTML onclick="fn(jq(val))" attributes.
+// JSON.stringify produces double-quotes which would break the attribute string;
+// escHtml converts them to &quot; which browsers decode correctly before JS runs.
+function jq(v) { return escHtml(JSON.stringify(v)); }
+
 function sevBadge(sev) {
   return `<span class="sev sev-${escHtml(sev)}">${escHtml(sev.toUpperCase())}</span>`;
 }
@@ -620,14 +627,27 @@ function downloadCSV(filename, rows, headers) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
-function showTab(name, btn) {
+const NAV_TABS = ['dashboard','upload','search','timeline','detections','iocs','ai'];
+
+function showTab(name, btnOrEl) {
   document.querySelectorAll('.tab-content').forEach(d => d.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   el(`tab-${name}`).classList.add('active');
-  if (btn) btn.classList.add('active');
+  // support both an element reference and a tab-name string
+  if (btnOrEl && typeof btnOrEl === 'object' && btnOrEl.classList) {
+    btnOrEl.classList.add('active');
+  } else {
+    const idx = NAV_TABS.indexOf(name);
+    if (idx >= 0) {
+      const btns = document.querySelectorAll('nav button');
+      if (btns[idx]) btns[idx].classList.add('active');
+    }
+  }
   if (name === 'dashboard') loadStats();
   if (name === 'iocs') loadIOCs();
 }
+
+function goTab(name) { showTab(name); }
 
 // ── Cases ─────────────────────────────────────────────────────────────────────
 
@@ -721,8 +741,8 @@ async function loadUsersList() {
                 <td class="ts">${escHtml((u.first_seen||'').slice(0,19))}</td>
                 <td class="ts">${escHtml((u.last_seen||'').slice(0,19))}</td>
                 <td>
-                  <button class="btn-pivot" onclick="pivotToTimeline(${JSON.stringify(u.user)})">&#x1F4C5; Timeline</button>
-                  <button class="btn-pivot" onclick="pivotToSearch(${JSON.stringify(u.user)})">&#x1F50D; Search</button>
+                  <button class="btn-pivot" onclick="pivotToTimeline(${jq(u.user)})">&#x1F4C5; Timeline</button>
+                  <button class="btn-pivot" onclick="pivotToSearch(${jq(u.user)})">&#x1F50D; Search</button>
                 </td>
               </tr>`).join('')}
           </tbody>
@@ -914,22 +934,46 @@ async function runSearch(offset = 0) {
 
     container.innerHTML = `
       <div class="card">
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:8px">Click any row to expand full event details</div>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
+              <th></th>
               <th>Timestamp</th><th>User</th><th>Operation</th>
               <th>Target</th><th>IP</th><th>Result</th><th>Type</th>
             </tr></thead>
             <tbody>
-              ${data.results.map(r => `
-                <tr>
+              ${data.results.map((r, idx) => `
+                <tr class="result-row" onclick="toggleSearchDetail(${idx})" title="Click to expand details">
+                  <td style="color:var(--muted);font-size:.7rem;padding:7px 6px">&#9658;</td>
                   <td class="ts">${escHtml((r.timestamp||'').slice(0,19))}</td>
-                  <td><span class="user-link" onclick="pivotToTimeline(${JSON.stringify(r.user||'')})">${escHtml(truncate(r.user,40))}</span></td>
+                  <td><span class="user-link" onclick="event.stopPropagation();pivotToTimeline(${jq(r.user||'')})">${escHtml(truncate(r.user,40))}</span></td>
                   <td class="op">${escHtml(truncate(r.operation,45))}</td>
                   <td>${escHtml(truncate(r.target,35))}</td>
-                  <td><span class="ioc-tag" onclick="searchByIP(${JSON.stringify(r.source_ip||'')})">${escHtml(r.source_ip||'')}</span></td>
+                  <td>${r.source_ip ? `<span class="ioc-tag" onclick="event.stopPropagation();searchByIP(${jq(r.source_ip)})">${escHtml(r.source_ip)}</span>` : ''}</td>
                   <td>${escHtml(r.result||'')}</td>
                   <td class="log-type">${escHtml(r.log_type||'')}</td>
+                </tr>
+                <tr id="sdetail-${idx}" style="display:none;background:#080e1a">
+                  <td colspan="8" style="padding:0 16px 12px 32px">
+                    <div style="padding-top:10px;font-size:.78rem">
+                      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 16px;margin-bottom:8px">
+                        <div><span style="color:var(--muted)">User:</span> <span style="color:#fde68a">${escHtml(r.user||'—')}</span></div>
+                        <div><span style="color:var(--muted)">Timestamp:</span> <span style="color:var(--accent2);font-family:monospace">${escHtml((r.timestamp||'').slice(0,19))}</span></div>
+                        <div><span style="color:var(--muted)">Operation:</span> <span style="color:#a5f3fc">${escHtml(r.operation||'—')}</span></div>
+                        <div><span style="color:var(--muted)">Target:</span> ${escHtml(r.target||'—')}</div>
+                        <div><span style="color:var(--muted)">Source IP:</span> ${escHtml(r.source_ip||'—')}</div>
+                        <div><span style="color:var(--muted)">Location:</span> ${escHtml(r.location||'—')}</div>
+                        <div><span style="color:var(--muted)">Result:</span> ${escHtml(r.result||'—')}</div>
+                        <div><span style="color:var(--muted)">Log Type:</span> ${escHtml(r.log_type||'—')}</div>
+                      </div>
+                      ${r.details ? `<div style="margin-top:6px"><span style="color:var(--muted)">Details:</span><pre style="margin-top:4px;background:#0b1120;border:1px solid var(--border);border-radius:6px;padding:10px;font-size:.72rem;overflow-x:auto;white-space:pre-wrap;max-height:200px;overflow-y:auto">${escHtml(formatDetails(r.details))}</pre></div>` : ''}
+                      <div class="row-actions" style="margin-top:8px">
+                        <button class="btn-pivot" onclick="pivotToTimeline(${jq(r.user||'')})">&#x1F4C5; User Timeline</button>
+                        ${r.source_ip ? `<button class="btn-pivot" onclick="searchByIP(${jq(r.source_ip)})">&#x1F50D; All from IP</button>` : ''}
+                      </div>
+                    </div>
+                  </td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -951,9 +995,27 @@ function pageSearch(dir) {
   runSearch(Math.max(0, searchOffset + dir * SEARCH_LIMIT));
 }
 
+function toggleSearchDetail(idx) {
+  const row = el(`sdetail-${idx}`);
+  if (!row) return;
+  const isOpen = row.style.display !== 'none';
+  row.style.display = isOpen ? 'none' : 'table-row';
+  // rotate the chevron in the main row
+  const chevron = row.previousElementSibling?.querySelector('td:first-child');
+  if (chevron) chevron.textContent = isOpen ? '▶' : '▼';
+}
+
+function formatDetails(raw) {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
 function searchByIP(ip) {
   if (!ip) return;
-  showTab('search', document.querySelectorAll('nav button')[2]);
+  goTab('search');
   el('searchInput').value = `ip=${ip}`;
   runSearch();
 }
@@ -968,7 +1030,7 @@ function exportSearchCSV() {
 
 function pivotToTimeline(user) {
   if (!user) return;
-  showTab('timeline', document.querySelectorAll('nav button')[3]);
+  goTab('timeline');
   el('tlUser').value = user;
   el('tlUserBadge').style.display = 'block';
   el('tlUserBadge').innerHTML = `<div class="info">Showing timeline for: <strong>${escHtml(user)}</strong> &nbsp;<button class="btn btn-secondary btn-sm" onclick="clearTimeline()">Clear</button></div>`;
@@ -977,7 +1039,7 @@ function pivotToTimeline(user) {
 
 function pivotToSearch(user) {
   if (!user) return;
-  showTab('search', document.querySelectorAll('nav button')[2]);
+  goTab('search');
   el('searchInput').value = `user=${user}`;
   runSearch();
 }
@@ -1022,8 +1084,8 @@ async function loadTimeline() {
         <div class="tl-ts">${escHtml((ev.timestamp||'').slice(0,19))}</div>
         <div class="tl-body">
           <div class="tl-op">${escHtml(truncate(ev.operation,60))}</div>
-          <div class="tl-user" onclick="pivotToTimeline(${JSON.stringify(ev.user||'')})">${escHtml(truncate(ev.user,50))}</div>
-          ${ev.source_ip ? `<div class="tl-ip"><span class="ioc-tag" onclick="searchByIP(${JSON.stringify(ev.source_ip)})">${escHtml(ev.source_ip)}</span> &nbsp; ${escHtml(ev.location||'')}</div>` : ''}
+          <div class="tl-user" onclick="pivotToTimeline(${jq(ev.user||'')})">${escHtml(truncate(ev.user,50))}</div>
+          ${ev.source_ip ? `<div class="tl-ip"><span class="ioc-tag" onclick="searchByIP(${jq(ev.source_ip)})">${escHtml(ev.source_ip)}</span> &nbsp; ${escHtml(ev.location||'')}</div>` : ''}
         </div>
       </div>`).join('');
     html += '</div>';
@@ -1092,8 +1154,9 @@ function buildDetCard(d, i) {
         ${steps.length ? `<h4>&#x1F6E1; IR Containment Steps</h4>${stepsHtml}` : ''}
         ${evidence.length ? `<h4>&#x1F4CB; Evidence Collection Checklist</h4>${evidHtml}` : ''}
         <div class="row-actions" style="margin-top:12px">
-          <button class="btn btn-secondary btn-sm" onclick="searchForDetection(${JSON.stringify(sq)})">&#x1F50D; Search Related Events</button>
-          <button class="btn btn-secondary btn-sm" onclick="searchForDetection(${JSON.stringify('user=' + (d.user||''))})">&#x1F464; Search User Events</button>
+          <button class="btn btn-secondary btn-sm" onclick="searchForDetection(${jq(sq)})">&#x1F50D; Search Related Events</button>
+          ${d.user ? `<button class="btn btn-secondary btn-sm" onclick="pivotToTimeline(${jq(d.user)})">&#x1F4C5; User Timeline</button>
+          <button class="btn btn-secondary btn-sm" onclick="pivotToSearch(${jq(d.user)})">&#x1F464; All User Events</button>` : ''}
         </div>
       </div>
     </div>`;
@@ -1106,7 +1169,7 @@ function toggleDet(i) {
 
 function searchForDetection(q) {
   if (!q || q === 'user=') return;
-  showTab('search', document.querySelectorAll('nav button')[2]);
+  goTab('search');
   el('searchInput').value = q;
   runSearch();
 }
@@ -1142,12 +1205,12 @@ async function loadIOCs() {
             <tbody>
               ${data.ips.map(ip => `
                 <tr>
-                  <td><span class="ioc-tag" onclick="searchByIP(${JSON.stringify(ip.value)})">${escHtml(ip.value)}</span></td>
+                  <td><span class="ioc-tag" onclick="searchByIP(${jq(ip.value)})">${escHtml(ip.value)}</span></td>
                   <td>${(ip.count||0).toLocaleString()}</td>
                   <td>${ip.unique_users||0}</td>
                   <td class="log-type">${escHtml(ip.log_types||'')}</td>
                   <td>
-                    <button class="btn-pivot" onclick="searchByIP(${JSON.stringify(ip.value)})">&#x1F50D; Search</button>
+                    <button class="btn-pivot" onclick="searchByIP(${jq(ip.value)})">&#x1F50D; Search</button>
                   </td>
                 </tr>`).join('')}
             </tbody>

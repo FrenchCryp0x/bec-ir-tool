@@ -24,6 +24,8 @@ def run_all(db: CaseDB) -> list[dict]:
         _offhours_signin,
         _mass_email_send,
         _password_reset_by_other,
+        _evidence_deletion,
+        _large_external_send,
     ):
         try:
             findings.extend(fn(db))
@@ -271,6 +273,64 @@ def _password_reset_by_other(db: CaseDB) -> list[dict]:
             r["user"], r["timestamp"],
             f"Password reset by {r['user']} on account {r.get('target', '?')}",
             "T1098 - Account Manipulation",
+            r.get("details", ""),
+        )
+        for r in rows
+    ]
+
+
+def _evidence_deletion(db: CaseDB) -> list[dict]:
+    """Bulk mailbox item deletion — common BEC cover-up after access."""
+    rows = _rows(db, """
+        SELECT user, timestamp, operation, COUNT(*) OVER (PARTITION BY user) AS total
+        FROM events
+        WHERE LOWER(operation) IN (
+            'movetodeletedItems', 'movetodeletedItems.',
+            'softdelete', 'harddeleteditem', 'purge'
+        )
+        ORDER BY timestamp
+        LIMIT 200
+    """)
+    if not rows:
+        return []
+
+    # group by user, flag if > 10 deletion events
+    by_user: dict = {}
+    for r in rows:
+        u = r["user"]
+        by_user.setdefault(u, []).append(r)
+
+    findings = []
+    for user, evs in by_user.items():
+        if len(evs) >= 5:
+            findings.append(_finding(
+                "evidence_deletion", "high",
+                user, evs[0]["timestamp"],
+                f"{user} performed {len(evs)} mailbox deletion operation(s) — possible evidence cover-up",
+                "T1070.008 - Indicator Removal: Clear Mailbox Data",
+                f"Operations: {', '.join(set(e['operation'] for e in evs))}",
+            ))
+    return findings
+
+
+def _large_external_send(db: CaseDB) -> list[dict]:
+    """Emails with large attachments sent externally — possible data exfiltration."""
+    rows = _rows(db, """
+        SELECT user, timestamp, target, details
+        FROM events
+        WHERE log_type = 'exchange_mtl'
+          AND details LIKE '%KB%'
+          AND CAST(regexp_extract(details, '"Size":\s*"(\d+)', 1) AS INTEGER) > 5000
+          AND target IS NOT NULL AND target != ''
+        ORDER BY timestamp
+        LIMIT 50
+    """)
+    return [
+        _finding(
+            "large_external_send", "medium",
+            r["user"], r["timestamp"],
+            f"{r['user']} sent a large email ({r.get('details','')[:80]}) to external recipient",
+            "T1048 - Exfiltration Over Alternative Protocol",
             r.get("details", ""),
         )
         for r in rows
