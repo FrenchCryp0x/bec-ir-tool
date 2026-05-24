@@ -190,16 +190,23 @@ def _impossible_travel(db: CaseDB) -> list[dict]:
         grp = grp.sort_values("timestamp").reset_index(drop=True)
         for i in range(1, len(grp)):
             prev, curr = grp.iloc[i - 1], grp.iloc[i]
-            hours = (curr["timestamp"] - prev["timestamp"]).total_seconds() / 3600
+            secs  = (curr["timestamp"] - prev["timestamp"]).total_seconds()
+            hours = secs / 3600
             if (
                 0 < hours <= 2
                 and prev["location"] != curr["location"]
                 and prev["source_ip"] != curr["source_ip"]
             ):
+                if secs < 60:
+                    time_str = f"{int(secs)}s"
+                elif secs < 3600:
+                    time_str = f"{int(secs // 60)}m {int(secs % 60)}s"
+                else:
+                    time_str = f"{hours:.1f} h"
                 findings.append(_finding(
                     "impossible_travel", "critical",
                     user, prev["timestamp"],
-                    f"Impossible travel: '{prev['location']}' → '{curr['location']}' in {hours:.1f} h",
+                    f"Impossible travel: '{prev['location']}' → '{curr['location']}' in {time_str}",
                     "T1078 - Valid Accounts",
                 ))
 
