@@ -207,20 +207,30 @@ def _impossible_travel(db: CaseDB) -> list[dict]:
 
 
 def _offhours_signin(db: CaseDB) -> list[dict]:
+    """Group off-hours sign-ins by user+day to reduce noise."""
     rows = _rows(db, """
-        SELECT user, timestamp, source_ip, location
+        SELECT
+            user,
+            CAST(timestamp AS DATE)      AS day,
+            COUNT(*)                     AS signin_count,
+            MIN(timestamp)               AS first_ts,
+            STRING_AGG(DISTINCT location, ', ')   AS locations,
+            STRING_AGG(DISTINCT source_ip, ', ')  AS ips
         FROM events
         WHERE (LOWER(log_type) = 'azure_ad_signin' OR LOWER(operation) LIKE '%signin%')
           AND (hour(timestamp) < 7 OR hour(timestamp) >= 20)
-        ORDER BY timestamp
-        LIMIT 50
+          AND user IS NOT NULL AND user != ''
+        GROUP BY user, CAST(timestamp AS DATE)
+        ORDER BY first_ts
+        LIMIT 30
     """)
     return [
         _finding(
             "offhours_signin", "low",
-            r["user"], r["timestamp"],
-            f"Sign-in outside business hours by {r['user']} from {r.get('location') or r.get('source_ip') or 'unknown'}",
+            r["user"], r["first_ts"],
+            f"{r['signin_count']} off-hours sign-in(s) by {r['user']} on {str(r['day'])[:10]} from {r.get('locations') or r.get('ips') or 'unknown'}",
             "T1078 - Valid Accounts",
+            f"IPs: {r.get('ips','')}",
         )
         for r in rows
     ]
@@ -280,58 +290,80 @@ def _password_reset_by_other(db: CaseDB) -> list[dict]:
 
 
 def _evidence_deletion(db: CaseDB) -> list[dict]:
-    """Bulk mailbox item deletion — common BEC cover-up after access."""
+    """Bulk mailbox item deletion across all deletion types — common BEC cover-up."""
     rows = _rows(db, """
-        SELECT user, timestamp, operation, COUNT(*) OVER (PARTITION BY user) AS total
+        SELECT
+            user,
+            operation,
+            COUNT(*)     AS op_count,
+            MIN(timestamp) AS first_ts
         FROM events
         WHERE LOWER(operation) IN (
             'movetodeletedItems', 'movetodeletedItems.',
-            'softdelete', 'harddeleteditem', 'purge'
+            'softdelete', 'softdeleteditem',
+            'harddeleteditem', 'harddelete', 'harddeletedmessage',
+            'purge'
         )
-        ORDER BY timestamp
-        LIMIT 200
+        GROUP BY user, operation
+        ORDER BY first_ts
     """)
     if not rows:
         return []
 
-    # group by user, flag if > 10 deletion events
+    # Aggregate across all deletion op types per user
     by_user: dict = {}
     for r in rows:
         u = r["user"]
-        by_user.setdefault(u, []).append(r)
+        by_user.setdefault(u, {"total": 0, "ops": {}, "first_ts": r["first_ts"]})
+        by_user[u]["total"] += r["op_count"]
+        by_user[u]["ops"][r["operation"]] = r["op_count"]
+        if r["first_ts"] < by_user[u]["first_ts"]:
+            by_user[u]["first_ts"] = r["first_ts"]
 
     findings = []
-    for user, evs in by_user.items():
-        if len(evs) >= 5:
+    for user, info in by_user.items():
+        if info["total"] >= 5:
+            ops_summary = ", ".join(f"{op}×{cnt}" for op, cnt in info["ops"].items())
+            hard_count = sum(v for k, v in info["ops"].items() if "hard" in k.lower())
+            sev = "critical" if hard_count > 0 else "high"
             findings.append(_finding(
-                "evidence_deletion", "high",
-                user, evs[0]["timestamp"],
-                f"{user} performed {len(evs)} mailbox deletion operation(s) — possible evidence cover-up",
+                "evidence_deletion", sev,
+                user, info["first_ts"],
+                f"{user} deleted {info['total']} mailbox items — possible evidence cover-up"
+                + (f" ({hard_count} PERMANENT HardDelete)" if hard_count else ""),
                 "T1070.008 - Indicator Removal: Clear Mailbox Data",
-                f"Operations: {', '.join(set(e['operation'] for e in evs))}",
+                ops_summary,
             ))
     return findings
 
 
 def _large_external_send(db: CaseDB) -> list[dict]:
-    """Emails with large attachments sent externally — possible data exfiltration."""
+    """Group large external sends by user — summarise total count and max size."""
     rows = _rows(db, """
-        SELECT user, timestamp, target, details
+        SELECT
+            user,
+            COUNT(*)       AS email_count,
+            COUNT(DISTINCT target) AS unique_recipients,
+            MIN(timestamp) AS first_ts,
+            MAX(timestamp) AS last_ts,
+            STRING_AGG(DISTINCT source_ip, ', ') AS ips
         FROM events
         WHERE log_type = 'exchange_mtl'
           AND details LIKE '%KB%'
-          AND CAST(regexp_extract(details, '"Size":\s*"(\d+)', 1) AS INTEGER) > 5000
+          AND TRY_CAST(regexp_extract(details, '"Size":\s*"(\d+)', 1) AS INTEGER) > 5000
           AND target IS NOT NULL AND target != ''
-        ORDER BY timestamp
+        GROUP BY user
+        ORDER BY email_count DESC
         LIMIT 50
     """)
     return [
         _finding(
-            "large_external_send", "medium",
-            r["user"], r["timestamp"],
-            f"{r['user']} sent a large email ({r.get('details','')[:80]}) to external recipient",
+            "large_external_send", "high" if r["email_count"] > 10 else "medium",
+            r["user"], r["first_ts"],
+            f"{r['user']} sent {r['email_count']} large emails (>5 MB) to {r['unique_recipients']} external recipients"
+            f" between {str(r['first_ts'])[:10]} and {str(r['last_ts'])[:10]}",
             "T1048 - Exfiltration Over Alternative Protocol",
-            r.get("details", ""),
+            f"Source IPs: {r.get('ips','')} | First: {str(r['first_ts'])[:19]} | Last: {str(r['last_ts'])[:19]}",
         )
         for r in rows
     ]

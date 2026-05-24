@@ -118,11 +118,33 @@ def _detect_log_type(df: pd.DataFrame) -> str:
 def _safe_ts(val) -> Optional[str]:
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return None
+    # Already a datetime/Timestamp — fast path
+    if hasattr(val, 'isoformat'):
+        try:
+            ts = pd.Timestamp(val)
+            return ts.tz_localize(None).isoformat() if ts.tzinfo is not None else ts.isoformat()
+        except Exception:
+            pass
+    s = str(val).strip()
+    # Truncate fractional seconds to 6 digits so stdlib parsers don't choke on
+    # 7-digit fractions produced by some Microsoft log exports (e.g. .7098312).
+    import re as _re
+    s = _re.sub(r'(\.\d{6})\d+', r'\1', s)
+    # Try pandas first — it handles ISO8601 and many other formats robustly
     try:
-        dt = dateparser.parse(str(val))
-        return dt.replace(tzinfo=None).isoformat()
+        ts = pd.to_datetime(s, utc=False)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert(None)
+        return ts.isoformat()
     except Exception:
-        return None
+        pass
+    try:
+        dt = dateparser.parse(s)
+        if dt:
+            return dt.replace(tzinfo=None).isoformat()
+    except Exception:
+        pass
+    return None
 
 
 def _first_col(df: pd.DataFrame, candidates: list[str]):
