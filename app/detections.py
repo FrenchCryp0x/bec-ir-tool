@@ -43,11 +43,13 @@ def _rows(db: CaseDB, sql: str) -> list[dict]:
 
 
 def _finding(rule, severity, user, timestamp, description, mitre="", detail="") -> dict:
+    # Normalize timestamp to second precision — no microseconds in forensic findings
+    ts = str(timestamp)[:19]
     return {
         "rule":        rule,
         "severity":    severity,
         "user":        str(user),
-        "timestamp":   str(timestamp),
+        "timestamp":   ts,
         "description": description,
         "mitre":       mitre,
         "detail":      str(detail)[:2000],
@@ -61,21 +63,22 @@ def _inbox_rules(db: CaseDB) -> list[dict]:
         SELECT user, operation, timestamp, source_ip, details
         FROM events
         WHERE LOWER(operation) IN (
-            'new-inboxrule', 'set-inboxrule', 'updateinboxrules',
-            'new-inboxrule.', 'set-inboxrule.'
+            'new-inboxrule', 'set-inboxrule', 'updateinboxrules'
         )
         ORDER BY timestamp
     """)
-    return [
-        _finding(
+    findings = []
+    for r in rows:
+        op = str(r.get("operation", "")).lower()
+        action = "created" if "new" in op or "update" in op else "modified"
+        findings.append(_finding(
             "inbox_rule_created", "high",
             r["user"], r["timestamp"],
-            f"Inbox rule created/modified by {r['user']}",
+            f"Inbox rule {action} by {r['user']}",
             "T1114.003 - Email Collection: Email Forwarding Rule",
             r.get("details", ""),
-        )
-        for r in rows
-    ]
+        ))
+    return findings
 
 
 def _mailbox_delegation(db: CaseDB) -> list[dict]:
@@ -84,7 +87,7 @@ def _mailbox_delegation(db: CaseDB) -> list[dict]:
         FROM events
         WHERE LOWER(operation) IN (
             'add-mailboxpermission', 'add-recipientpermission',
-            'addmailboxpermissions', 'add-mailboxpermission.'
+            'addmailboxpermissions'
         )
         ORDER BY timestamp
     """)
@@ -129,10 +132,13 @@ def _admin_role_added(db: CaseDB) -> list[dict]:
         SELECT user, operation, timestamp, source_ip, details
         FROM events
         WHERE LOWER(operation) IN (
-            'add member to role.', 'add user.',
-            'set user.', 'add delegated permission grant.'
+            'add member to role.', 'add member to role'
         )
-          AND LOWER(details) LIKE '%admin%'
+          AND (
+            LOWER(details) LIKE '%admin%'
+            OR LOWER(details) LIKE '%privileged%'
+            OR LOWER(details) LIKE '%administrator%'
+          )
         ORDER BY timestamp
     """)
     return [
@@ -149,14 +155,23 @@ def _admin_role_added(db: CaseDB) -> list[dict]:
 
 def _mfa_modified(db: CaseDB) -> list[dict]:
     rows = _rows(db, """
-        SELECT user, operation, timestamp, source_ip
+        SELECT user, operation, timestamp, source_ip, details
         FROM events
-        WHERE LOWER(operation) IN (
-            'strongauthenticationmethodadded',
-            'user strongauthenticationrequirement changed',
-            'delete user authentication method',
-            'update user.',
-            'disable strong authentication.'
+        WHERE (
+            LOWER(operation) IN (
+                'strongauthenticationmethodadded',
+                'user strongauthenticationrequirement changed',
+                'delete user authentication method',
+                'disable strong authentication.'
+            )
+            OR (
+                LOWER(operation) IN ('update user.', 'update user')
+                AND (
+                    LOWER(details) LIKE '%strongauthentication%'
+                    OR LOWER(details) LIKE '%authentication method%'
+                    OR LOWER(details) LIKE '%multifactor%'
+                )
+            )
         )
         ORDER BY timestamp
     """)
@@ -229,7 +244,6 @@ def _offhours_signin(db: CaseDB) -> list[dict]:
           AND user IS NOT NULL AND user != ''
         GROUP BY user, CAST(timestamp AS DATE)
         ORDER BY first_ts
-        LIMIT 30
     """)
     return [
         _finding(
@@ -248,7 +262,7 @@ def _mass_email_send(db: CaseDB) -> list[dict]:
     df = db.query("""
         SELECT user, timestamp, target
         FROM events
-        WHERE log_type = 'exchange_mtl'
+        WHERE LOWER(log_type) = 'exchange_mtl'
           AND target IS NOT NULL AND target != ''
         ORDER BY user, timestamp
     """)
@@ -355,13 +369,13 @@ def _large_external_send(db: CaseDB) -> list[dict]:
             MAX(timestamp) AS last_ts,
             STRING_AGG(DISTINCT source_ip, ', ') AS ips
         FROM events
-        WHERE log_type = 'exchange_mtl'
+        WHERE LOWER(log_type) = 'exchange_mtl'
           AND details LIKE '%KB%'
-          AND TRY_CAST(regexp_extract(details, '"Size":\s*"(\d+)', 1) AS INTEGER) > 5000
+          AND TRY_CAST(regexp_extract(details, '"Size"[^0-9]*(\d+)', 1) AS INTEGER) > 5000
           AND target IS NOT NULL AND target != ''
+          AND target NOT LIKE '%@%@%'
         GROUP BY user
         ORDER BY email_count DESC
-        LIMIT 50
     """)
     return [
         _finding(

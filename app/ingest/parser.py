@@ -122,7 +122,9 @@ def _safe_ts(val) -> Optional[str]:
     if hasattr(val, 'isoformat'):
         try:
             ts = pd.Timestamp(val)
-            return ts.tz_localize(None).isoformat() if ts.tzinfo is not None else ts.isoformat()
+            if ts.tzinfo is not None:
+                ts = ts.tz_localize(None)
+            return ts.replace(microsecond=0).isoformat()
         except Exception:
             pass
     s = str(val).strip()
@@ -135,13 +137,13 @@ def _safe_ts(val) -> Optional[str]:
         ts = pd.to_datetime(s, utc=False)
         if ts.tzinfo is not None:
             ts = ts.tz_convert(None)
-        return ts.isoformat()
+        return ts.replace(microsecond=0).isoformat()
     except Exception:
         pass
     try:
         dt = dateparser.parse(s)
         if dt:
-            return dt.replace(tzinfo=None).isoformat()
+            return dt.replace(tzinfo=None, microsecond=0).isoformat()
     except Exception:
         pass
     return None
@@ -242,7 +244,7 @@ def _norm_azure_ad_csv(df: pd.DataFrame) -> pd.DataFrame:
     for _, row in df.iterrows():
         rows.append({
             "timestamp": _safe_ts(row.get("Date (UTC)") or row.get("CreatedDateTime")),
-            "user":      str(row.get("User") or row.get("Username") or ""),
+            "user":      str(row.get("UserPrincipalName") or row.get("Username") or row.get("User") or ""),
             "operation": f"SignIn:{row.get('App') or row.get('Application') or 'Unknown'}",
             "target":    str(row.get("App") or row.get("Application") or ""),
             "source_ip": str(row.get("IP address") or row.get("IPAddress") or ""),
@@ -363,10 +365,10 @@ def _norm_exchange_trace(df: pd.DataFrame) -> pd.DataFrame:
             "timestamp": _safe_ts(row.get("origin_timestamp_utc")),
             "user":      str(row.get("sender_address") or ""),
             "operation": "EMAIL:SEND",
-            "target":    str(row.get("recipient_status") or ""),  # contains recipient email
+            "target":    str(row.get("recipient_address") or ""),
             "source_ip": str(row.get("original_client_ip") or ""),
             "location":  "",
-            "result":    str(row.get("delivery_priority") or ""),
+            "result":    str(row.get("recipient_status") or row.get("delivery_status") or ""),
             "details":   json.dumps(details_obj, default=str),
             "log_type":  "exchange_mtl",  # same logical type for detections
             "raw":       row.to_json(),
