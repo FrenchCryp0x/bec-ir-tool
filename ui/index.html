@@ -1275,6 +1275,22 @@ const PHASES = [
       'Notify affected business stakeholders of the containment timeline and any data accessed.',
     ],
   },
+  {
+    id: 'security_gaps',
+    label: 'Security Gaps & Risk Factors',
+    icon: '⚠️',
+    borderColor: '#f59e0b',
+    rules: ['gap_no_prior_mfa', 'gap_mfa_delay', 'gap_unseen_exfil_ip', 'gap_early_compromise'],
+    description: 'Hardening failures and forensic blind spots identified from the log evidence — security controls that were absent or delayed during this incident.',
+    actions: [
+      'Enforce MFA for all accounts via Conditional Access — password-only accounts must be remediated immediately.',
+      'Investigate and block all IPs that appear in email logs but not in sign-in logs.',
+      'Determine whether the account was compromised earlier than the known incident window and expand the scope accordingly.',
+      'Enable Advanced Auditing (E3/E5) so MailItemsAccessed events are captured in future incidents.',
+      'Block legacy authentication protocols via Conditional Access to prevent sign-in log bypasses.',
+      'Implement Conditional Access policies with named locations and sign-in risk policies.',
+    ],
+  },
 ];
 
 const OVERALL_SEV_ORDER = ['critical', 'high', 'medium', 'low'];

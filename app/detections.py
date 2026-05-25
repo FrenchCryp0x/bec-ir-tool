@@ -28,6 +28,7 @@ def run_all(db: CaseDB) -> list[dict]:
         _evidence_deletion,
         _large_external_send,
         _account_remediation,
+        _security_gaps,
     ):
         try:
             findings.extend(fn(db))
@@ -452,6 +453,126 @@ def _account_remediation(db: CaseDB) -> list[dict]:
             r.get("details", ""),
         ))
     return findings
+
+
+def _security_gaps(db: CaseDB) -> list[dict]:
+    """Meta-analysis: surface security posture gaps and hardening failures visible in the logs."""
+    gaps = []
+
+    # Gap 1: No MFA configured prior to compromise
+    mfa_rows = _rows(db, """
+        SELECT user, timestamp, details
+        FROM events
+        WHERE (
+            LOWER(operation) IN ('strongauthenticationmethodadded', 'update user.', 'update user')
+            AND LOWER(details) LIKE '%strongauthenticationmethod%'
+        )
+        ORDER BY timestamp
+        LIMIT 1
+    """)
+    for r in mfa_rows:
+        try:
+            d = json.loads(str(r.get("details", "{}")))
+            for prop in d.get("ModifiedProperties", []):
+                if prop.get("Name") == "StrongAuthenticationMethod":
+                    old = str(prop.get("OldValue", "x")).strip()
+                    if old in ("[]", "", "null"):
+                        gaps.append(_finding(
+                            "gap_no_prior_mfa", "critical",
+                            r["user"], r["timestamp"],
+                            f"No MFA was configured for {r['user']} prior to compromise — the account was protected by password only",
+                            "T1556 - Modify Authentication Process",
+                        ))
+                    break
+        except Exception:
+            pass
+
+    # Gap 2: Days between first sign-in activity and MFA enforcement
+    tl = _rows(db, """
+        SELECT
+            MIN(CASE WHEN LOWER(log_type) = 'azure_ad_signin'
+                     THEN timestamp END)                                         AS first_signin,
+            MAX(CASE WHEN LOWER(operation) IN (
+                          'strongauthenticationmethodadded','update user.','update user'
+                     ) AND LOWER(details) LIKE '%strongauthenticationmethod%'
+                     THEN timestamp END)                                         AS mfa_ts,
+            (SELECT user FROM events
+             WHERE LOWER(log_type) = 'azure_ad_signin'
+               AND user IS NOT NULL AND user != ''
+             ORDER BY timestamp LIMIT 1)                                         AS signin_user
+        FROM events
+    """)
+    if tl and tl[0].get("first_signin") and tl[0].get("mfa_ts"):
+        row = tl[0]
+        try:
+            first = pd.to_datetime(row["first_signin"])
+            mfa   = pd.to_datetime(row["mfa_ts"])
+            days  = (mfa - first).days
+            if days > 7:
+                gaps.append(_finding(
+                    "gap_mfa_delay", "high",
+                    str(row.get("signin_user", "") or ""),
+                    first,
+                    f"MFA was not enforced until {days} days after the first sign-in activity — the account remained vulnerable during this window",
+                    "T1556 - Modify Authentication Process",
+                ))
+        except Exception:
+            pass
+
+    # Gap 3: IPs in email/exchange logs not seen in any sign-in log (untracked attacker infrastructure)
+    unseen = _rows(db, """
+        SELECT e.source_ip, MIN(e.timestamp) AS first_seen
+        FROM events e
+        WHERE LOWER(e.log_type) = 'exchange_mtl'
+          AND e.source_ip IS NOT NULL AND e.source_ip != ''
+          AND e.source_ip NOT LIKE '%:%'
+          AND e.source_ip NOT IN (
+              SELECT DISTINCT source_ip FROM events
+              WHERE LOWER(log_type) IN ('azure_ad_signin', 'o365_ual')
+                AND source_ip IS NOT NULL AND source_ip != ''
+          )
+        GROUP BY e.source_ip
+        ORDER BY first_seen
+    """)
+    if unseen:
+        ip_list = ", ".join(r["source_ip"] for r in unseen)
+        gaps.append(_finding(
+            "gap_unseen_exfil_ip", "high",
+            "",
+            unseen[0]["first_seen"],
+            f"{len(unseen)} IP(s) appear in email logs but not in sign-in logs — potential untracked attacker infrastructure: {ip_list}",
+            "T1048 - Exfiltration Over Alternative Protocol",
+        ))
+
+    # Gap 4: Email exfiltration predates first sign-in log by >30 days (early compromise indicator)
+    dates = _rows(db, """
+        SELECT
+            MIN(CASE WHEN LOWER(log_type) = 'exchange_mtl' THEN timestamp END)  AS first_exfil,
+            MIN(CASE WHEN LOWER(log_type) = 'azure_ad_signin' THEN timestamp END) AS first_signin,
+            (SELECT user FROM events
+             WHERE LOWER(log_type) = 'exchange_mtl'
+               AND user IS NOT NULL AND user != ''
+             ORDER BY timestamp LIMIT 1)                                          AS exfil_user
+        FROM events
+    """)
+    if dates and dates[0].get("first_exfil") and dates[0].get("first_signin"):
+        row = dates[0]
+        try:
+            exfil  = pd.to_datetime(row["first_exfil"])
+            signin = pd.to_datetime(row["first_signin"])
+            days_before = (signin - exfil).days
+            if days_before > 30:
+                gaps.append(_finding(
+                    "gap_early_compromise", "critical",
+                    str(row.get("exfil_user", "") or ""),
+                    exfil,
+                    f"Email exfiltration began {days_before} days before the first sign-in log entry — the account may have been compromised well before the known incident window",
+                    "T1078 - Valid Accounts",
+                ))
+        except Exception:
+            pass
+
+    return gaps
 
 
 def _large_external_send(db: CaseDB) -> list[dict]:
