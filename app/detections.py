@@ -23,9 +23,11 @@ def run_all(db: CaseDB) -> list[dict]:
         _impossible_travel,
         _offhours_signin,
         _mass_email_send,
+        _mail_items_accessed,
         _password_reset_by_other,
         _evidence_deletion,
         _large_external_send,
+        _account_remediation,
     ):
         try:
             findings.extend(fn(db))
@@ -379,6 +381,76 @@ def _evidence_deletion(db: CaseDB) -> list[dict]:
                 "T1070.008 - Indicator Removal: Clear Mailbox Data",
                 ops_summary,
             ))
+    return findings
+
+
+def _mail_items_accessed(db: CaseDB) -> list[dict]:
+    """Mailbox read access — shows which emails the attacker collected."""
+    rows = _rows(db, """
+        SELECT
+            user,
+            CAST(timestamp AS DATE)              AS day,
+            COUNT(*)                             AS access_count,
+            MIN(timestamp)                       AS first_ts,
+            STRING_AGG(DISTINCT source_ip, ', ') AS ips
+        FROM events
+        WHERE LOWER(operation) IN ('mailitemsaccessed', 'mail items accessed')
+          AND user IS NOT NULL AND user != ''
+        GROUP BY user, CAST(timestamp AS DATE)
+        ORDER BY first_ts
+    """)
+    return [
+        _finding(
+            "mail_items_accessed", "high",
+            r["user"], r["first_ts"],
+            f"{r['user']} accessed {r['access_count']} mailbox item(s) on {str(r['day'])[:10]}",
+            "T1114 - Email Collection",
+            f"IPs: {r.get('ips', '')}",
+        )
+        for r in rows
+    ]
+
+
+def _account_remediation(db: CaseDB) -> list[dict]:
+    """IR/admin containment actions — session revocations and account lockouts."""
+    rows = _rows(db, """
+        SELECT user, operation, timestamp, target, source_ip, details
+        FROM events
+        WHERE LOWER(operation) IN (
+            'revoke refresh tokens for user.',
+            'revoke-azureaduserallrefreshtoken',
+            'invalidate all active sessions.',
+            'disable account.',
+            'block sign in.'
+        )
+        OR (
+            LOWER(operation) IN ('update user.', 'update user')
+            AND LOWER(details) LIKE '%accountenabled%'
+            AND LOWER(details) LIKE '%false%'
+        )
+        ORDER BY timestamp
+    """)
+    findings = []
+    for r in rows:
+        op  = str(r.get("operation", "")).lower()
+        det = str(r.get("details", "")).lower()
+        if "revoke" in op or "invalidate" in op or "session" in op:
+            action = "All sessions revoked"
+        elif "disable" in op or "block" in op or "accountenabled" in det:
+            action = "Account disabled/blocked"
+        else:
+            action = "Containment action"
+        target_str = str(r.get("target", "") or "")
+        desc = f"{action} — actor: {r['user']}"
+        if target_str and target_str != str(r["user"]):
+            desc += f" | target: {target_str}"
+        findings.append(_finding(
+            "account_remediation", "medium",
+            r["user"], r["timestamp"],
+            desc,
+            "T1078 - Valid Accounts",
+            r.get("details", ""),
+        ))
     return findings
 
 

@@ -300,7 +300,7 @@ td.user { color: #fde68a; }
       3. Click stat cards above to drill into users, events, and log types.<br>
       4. Use <strong>Search</strong> with quick-chips or custom filters.<br>
       5. Check <strong>Detections</strong> for triggered BEC rules — expand each card for IR playbook steps.<br>
-      6. Open <strong>Attack Summary</strong> for an automatic phased IR view — Initial Access → Persistence → Exfiltration → Cover-up.<br>
+      6. Open <strong>Attack Summary</strong> for an automatic phased IR view — Initial Access → Persistence → Collection → Exfiltration → Cover-up → Containment.<br>
       7. Review <strong>IOCs</strong> for suspicious source IPs.<br>
       8. Run <strong>AI Analysis</strong> for Claude's attack-chain assessment.
     </p>
@@ -1201,6 +1201,21 @@ const PHASES = [
     ],
   },
   {
+    id: 'collection',
+    label: 'Collection',
+    icon: '📂',
+    borderColor: '#a855f7',
+    rules: ['mail_items_accessed'],
+    description: 'Attacker reads victim emails and collects sensitive data prior to exfiltration — MailItemsAccessed events record exactly which folders and messages were opened.',
+    actions: [
+      'Identify all mailbox folders accessed from attacker IPs during the incident window.',
+      'Enumerate messages read — check for financial, legal, or credential content.',
+      'Preserve MailItemsAccessed audit logs before the 90-day retention window expires.',
+      'Confirm E3/E5 mailbox auditing is enabled (MailItemsAccessed requires advanced audit).',
+      'Assess whether accessed emails were used in follow-on fraud (e.g. wire transfer instructions).',
+    ],
+  },
+  {
     id: 'exfiltration',
     label: 'Exfiltration',
     icon: '📤',
@@ -1243,6 +1258,21 @@ const PHASES = [
       'Revoke all sessions for affected accounts after password reset.',
       'Review actions taken by the resetting account before and after the event.',
       'Investigate potential helpdesk social engineering (vishing, spoofed tickets).',
+    ],
+  },
+  {
+    id: 'containment',
+    label: 'Containment & Recovery',
+    icon: '🛡️',
+    borderColor: '#22c55e',
+    rules: ['account_remediation'],
+    description: 'IR team response — session revocations, account lockouts, and access restoration actions recorded in Azure AD Audit logs.',
+    actions: [
+      'Confirm all attacker sessions were fully revoked and no refresh token re-use occurred.',
+      'Verify the account was only re-enabled after password reset and MFA re-enrolment.',
+      'Audit sign-in logs for 48 hours post-containment for any residual attacker access.',
+      'Review conditional access policies and implement geo-blocking or named location restrictions.',
+      'Notify affected business stakeholders of the containment timeline and any data accessed.',
     ],
   },
 ];
